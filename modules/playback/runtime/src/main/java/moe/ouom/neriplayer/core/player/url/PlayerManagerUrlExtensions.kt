@@ -62,6 +62,7 @@ import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.platform.kugou.api.KugouApiException
 import moe.ouom.neriplayer.platform.netease.api.playback.parser.NeteasePlaybackResponseParser
 import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseAutoBiliSource
+import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseAutoKugouSource
 import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseMatchedLocalSource
 import moe.ouom.neriplayer.core.player.watchdog.configureActivePlaybackCandidates
 import moe.ouom.neriplayer.core.player.watchdog.currentPlaybackCandidate
@@ -1728,6 +1729,11 @@ private suspend fun PlayerManager.getNeteaseSongUrl(
                 }
             }
             if (allowAutoBiliFallback) {
+                // 换源优先级: 酷狗(完整版权音源) → B站(投稿视频)。
+                // 酷狗未登录或没有合格匹配时会返回 null, 自然落到 B 站。
+                tryResolveNeteaseAutoKugouSource(song, sideEffects)?.let {
+                    return@withContext it
+                }
                 tryResolveNeteaseAutoBiliSource(song, sideEffects)?.let {
                     return@withContext it
                 }

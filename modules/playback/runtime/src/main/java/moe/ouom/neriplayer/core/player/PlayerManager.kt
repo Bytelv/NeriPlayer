@@ -702,6 +702,7 @@ object PlayerManager {
     val neteaseClient by lazy { PlayerDependencies.repositories.neteaseClient }
     val youtubeMusicPlaybackRepository by lazy { PlayerDependencies.repositories.youtubeMusicPlaybackRepository }
     val kugouPlaybackRepository by lazy { PlayerDependencies.repositories.kugouPlaybackRepository }
+    val kugouSearchApi by lazy { PlayerDependencies.repositories.kugouSearchApi }
     val youtubeMusicClient by lazy { PlayerDependencies.repositories.youtubeMusicClient }
 
     val cloudMusicSearchApi by lazy { PlayerDependencies.repositories.cloudMusicSearchApi }

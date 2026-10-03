@@ -90,7 +90,13 @@ private fun SongUrlResult.Success.toPlaybackUrlCandidate(): PlaybackUrlCandidate
     )
 }
 
-private fun buildNeteaseAutoSourceQueries(song: SongItem): List<String> {
+/**
+ * 自动换源用的检索词组合
+ *
+ * 网易云自动换源会依次尝试这些词, 命中即停。酷狗侧复用同一套
+ * (见 `PlayerManagerNeteaseAutoKugouSource`), 保证两个平台的匹配口径一致。
+ */
+internal fun buildNeteaseAutoSourceQueries(song: SongItem): List<String> {
     val title = (song.originalName ?: song.name).trim()
     val artist = (song.originalArtist ?: song.artist).trim()
     return listOf(
