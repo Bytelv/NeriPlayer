@@ -209,16 +209,103 @@ class SearchManagerTest {
     private fun candidate(
         id: String,
         singer: String = "Artist One",
-        duration: String
+        duration: String,
+        songName: String = "Signal"
     ): SongSearchInfo {
         return SongSearchInfo(
             id = id,
-            songName = "Signal",
+            songName = songName,
             singer = singer,
             duration = duration,
             source = MusicPlatform.CLOUD_MUSIC,
             albumName = null,
             coverUrl = null
+        )
+    }
+
+    // -------------------------------------------------- 多歌手写法差异 (真机回归)
+
+    /**
+     * 上游用 `、` 拼接多个歌手, 且可能重复出现
+     *
+     * 该分隔符**不在** artistSeparatorRegex 里, 所以歌手会被当成单个元素;
+     * 若再要求"歌手集合完全相等", 就会出现明明搜到了却判为没有匹配。
+     * 这里锁住"存在真实重叠即可"。
+     */
+    @Test
+    fun `multi artist separated by ideographic comma still matches`() {
+        val result = manager.selectBestSearchCandidate(
+            songName = "Sisters and Brothers",
+            songArtist = "Sofia",
+            songDurationMs = 114_000L,
+            candidates = listOf(
+                candidate(
+                    id = "5A6F4097FFFF0CD2E7D8C728FEDD4347",
+                    singer = "The Cast of Sofia the First、Sofia、Sofia",
+                    duration = "1:54",
+                    songName = "Sisters and Brothers"
+                )
+            )
+        )
+
+        assertEquals("5A6F4097FFFF0CD2E7D8C728FEDD4347", result?.id)
+    }
+
+    /** 歌手顺序不同、或一方是另一方的子串, 都应视为同一批演唱者 */
+    @Test
+    fun `artist order and containment still match`() {
+        assertEquals(
+            "reordered",
+            manager.selectBestSearchCandidate(
+                songName = "Signal",
+                songArtist = "Artist Two / Artist One",
+                songDurationMs = 180_000L,
+                candidates = listOf(
+                    candidate(id = "reordered", singer = "Artist One、Artist Two", duration = "3:00")
+                )
+            )?.id
+        )
+
+        assertEquals(
+            "contained",
+            manager.selectBestSearchCandidate(
+                songName = "Signal",
+                songArtist = "Sofia",
+                songDurationMs = 180_000L,
+                candidates = listOf(
+                    candidate(id = "contained", singer = "Sofia the First", duration = "3:00")
+                )
+            )?.id
+        )
+    }
+
+    /** 歌名相同但演唱者完全无关时仍必须拒绝, 避免命中同名不同版本 */
+    @Test
+    fun `same title with unrelated artist is still rejected`() {
+        assertNull(
+            manager.selectBestSearchCandidate(
+                songName = "Signal",
+                songArtist = "Artist One",
+                songDurationMs = 180_000L,
+                candidates = listOf(
+                    candidate(id = "cover", singer = "Totally Different Band", duration = "3:00")
+                )
+            )
+        )
+    }
+
+    /** 时长明显不符的候选不能因为歌手匹配就被接受 */
+    @Test
+    fun `artist overlap does not override duration mismatch`() {
+        assertNull(
+            manager.selectBestSearchCandidate(
+                songName = "Signal",
+                songArtist = "Artist One",
+                songDurationMs = 180_000L,
+                candidates = listOf(
+                    candidate(id = "far", singer = "Artist One", duration = "9:30")
+                )
+            )
         )
     }
 }

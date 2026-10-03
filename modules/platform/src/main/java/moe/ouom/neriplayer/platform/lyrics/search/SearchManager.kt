@@ -29,10 +29,15 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.platform.search.api.SearchApi
 import moe.ouom.neriplayer.common.logging.NPLogger
+import moe.ouom.neriplayer.data.model.kugou.KugouDebugLog
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.platform.lyrics.matching.isExternalLyricDurationCompatible
 private const val MINIMUM_MATCH_SCORE = 60
+
+/** 诊断缓冲只保留一次匹配的摘要, 避免把缓冲区刷满 */
+private const val MAX_LOGGED_REJECTIONS = 4
+private const val MAX_MATCH_DIAGNOSTIC_CHARS = 320
 
 class SearchManager(private val searchApi: (MusicPlatform) -> SearchApi) {
 
@@ -151,21 +156,61 @@ class SearchManager(private val searchApi: (MusicPlatform) -> SearchApi) {
             normalizedArtists.isEmpty() ||
             songDurationMs <= 0L
         ) {
+            recordMatchDiagnostics(
+                songName = songName,
+                summary = "跳过: 名称/歌手/时长为空 (durationMs=$songDurationMs)"
+            )
             return null
         }
 
-        return candidates.mapNotNull { candidate ->
-            val candidateDurationMs = parseDurationMs(candidate.duration) ?: return@mapNotNull null
+        // 记录拒绝原因, 便于在"搜到了却提示没匹配"时直接定位
+        val rejections = mutableListOf<String>()
+
+        val best = candidates.mapNotNull { candidate ->
+            val candidateDurationMs = parseDurationMs(candidate.duration) ?: run {
+                rejections += "${candidate.songName}: 时长无法解析(${candidate.duration})"
+                return@mapNotNull null
+            }
+            if (!isExternalLyricDurationCompatible(songDurationMs, candidateDurationMs)) {
+                rejections +=
+                    "${candidate.songName}: 时长不符(期望${songDurationMs}ms 实际${candidateDurationMs}ms)"
+                return@mapNotNull null
+            }
+
             val candidateSongName = normalizeText(candidate.songName)
             val candidateArtist = normalizeText(candidate.singer)
             val candidateArtists = normalizeArtists(candidate.singer)
+
+            // 标题必须一致或互相包含, 具体程度交给 scoreCandidate 打分
             if (
-                candidateSongName != normalizedSongName ||
-                candidateArtist.isBlank() ||
-                candidateArtists != normalizedArtists ||
-                !isExternalLyricDurationCompatible(songDurationMs, candidateDurationMs)
+                candidateSongName != normalizedSongName &&
+                !candidateSongName.contains(normalizedSongName) &&
+                !normalizedSongName.contains(candidateSongName)
             ) {
+                rejections += "${candidate.songName}: 标题不符(期望'$normalizedSongName')"
                 return@mapNotNull null
+            }
+
+            /*
+             * 歌手不做"集合完全相等"判断
+             *
+             * 上游歌手的写法极不统一: 同一批人可能用 "、" 拼接、顺序不同、甚至重复
+             * 出现 (例如 "A、B、B"), 归一化成集合后反而与本地不等, 导致明明能匹配
+             * 的歌曲被判为"没有匹配"。这里只要求存在**真实重叠**, 用来挡掉
+             * 歌名相同但演唱者完全不同的版本; 具体程度仍由 scoreCandidate 打分,
+             * 并以 MINIMUM_MATCH_SCORE 收口。
+             *
+             * 本地歌手为空时无从校验, 交给标题 + 时长把关。
+             */
+            if (normalizedArtist.isNotBlank() && candidateArtist.isNotBlank()) {
+                val hasArtistOverlap =
+                    candidateArtists.intersect(normalizedArtists).isNotEmpty() ||
+                        candidateArtist.contains(normalizedArtist) ||
+                        normalizedArtist.contains(candidateArtist)
+                if (!hasArtistOverlap) {
+                    rejections += "${candidate.songName}: 歌手无重叠(期望'$normalizedArtist' 实际'$candidateArtist')"
+                    return@mapNotNull null
+                }
             }
 
             SearchCandidateScore(
@@ -178,13 +223,45 @@ class SearchManager(private val searchApi: (MusicPlatform) -> SearchApi) {
                 ),
                 durationDeltaMs = abs(songDurationMs - candidateDurationMs)
             )
-        }.filter { it.score >= MINIMUM_MATCH_SCORE }
+        }.filter {
+            if (it.score < MINIMUM_MATCH_SCORE) {
+                rejections +=
+                    "${it.candidate.songName}: 分数不足(${it.score} < $MINIMUM_MATCH_SCORE)"
+                false
+            } else {
+                true
+            }
+        }
             .sortedWith(
                 compareByDescending<SearchCandidateScore> { it.score }
                     .thenBy { it.durationDeltaMs }
             )
             .firstOrNull()
             ?.candidate
+
+        recordMatchDiagnostics(
+            songName = songName,
+            summary = buildString {
+                append("候选=").append(candidates.size)
+                append(", 命中=").append(best?.songName ?: "无")
+                if (best == null) {
+                    rejections.take(MAX_LOGGED_REJECTIONS).forEach {
+                        append(" | 拒绝: ").append(it)
+                    }
+                }
+            }
+        )
+        return best
+    }
+
+    /** 匹配诊断写入酷狗诊断缓冲: 设备上不便取 logcat, 这是唯一可见的通道 */
+    private fun recordMatchDiagnostics(songName: String, summary: String) {
+        runCatching {
+            KugouDebugLog.record(
+                label = "MATCH ${songName.take(40)}",
+                detail = summary.take(MAX_MATCH_DIAGNOSTIC_CHARS)
+            )
+        }
     }
 
     private suspend fun searchCandidates(
