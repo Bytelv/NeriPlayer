@@ -638,6 +638,7 @@ internal suspend fun PlayerManager.getTranslatedLyricsImpl(
         neteaseClient = neteaseClient,
         neteaseLyricsCache = neteaseLyricsCache,
         editableLyricsMatcher = PlayerDependencies.repositories.editableLyricsMatcher,
+        kugouPlaybackLyricsResolver = PlayerDependencies.repositories.kugouPlaybackLyricsResolver,
         preferWordTimedLyrics = preferWordTimedLyrics,
         defaultLyricSource = if (skipPreferredSource) {
             LyricSourcePreference.Automatic
@@ -656,6 +657,7 @@ internal suspend fun PlayerManager.getRomanizedLyricsImpl(song: SongItem): List<
         neteaseClient = neteaseClient,
         neteaseLyricsCache = neteaseLyricsCache,
         editableLyricsMatcher = PlayerDependencies.repositories.editableLyricsMatcher,
+        kugouPlaybackLyricsResolver = PlayerDependencies.repositories.kugouPlaybackLyricsResolver,
         preferWordTimedLyrics = preferWordTimedLyrics,
         defaultLyricSource = defaultLyricSource,
         biliSourceTag = BILI_SOURCE_TAG
@@ -675,6 +677,7 @@ internal suspend fun PlayerManager.getLyricsImpl(
         lrcLibClient = lrcLibClient,
         editableLyricsMatcher = PlayerDependencies.repositories.editableLyricsMatcher,
         amllTtmlClient = amllTtmlClient,
+        kugouPlaybackLyricsResolver = PlayerDependencies.repositories.kugouPlaybackLyricsResolver,
         amllLyricsEnabled = amllLyricsEnabled,
         preferWordTimedLyrics = preferWordTimedLyrics,
         defaultLyricSource = if (skipPreferredSource) {
@@ -696,7 +699,8 @@ internal suspend fun PlayerManager.getPreferredLyricSourceResultImpl(
     preferWordTimed = preferWordTimedLyrics,
     editableLyricsMatcher = PlayerDependencies.repositories.editableLyricsMatcher,
     neteaseClient = neteaseClient,
-    neteaseLyricsCache = neteaseLyricsCache
+    neteaseLyricsCache = neteaseLyricsCache,
+    kugouPlaybackLyricsResolver = PlayerDependencies.repositories.kugouPlaybackLyricsResolver
 )
 
 internal fun PlayerManager.playFromQueueImpl(
@@ -879,6 +883,7 @@ internal fun PlayerManager.replaceMetadataFromSearchImpl(
             val api = when (platform) {
                 MusicPlatform.CLOUD_MUSIC -> cloudMusicSearchApi
                 MusicPlatform.QQ_MUSIC -> qqMusicSearchApi
+                MusicPlatform.KUGOU -> PlayerDependencies.repositories.kugouSearchApi
             }
 
             val (newDetails, usedSearchSummaryFallback) = try {

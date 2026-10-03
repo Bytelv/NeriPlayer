@@ -73,6 +73,7 @@ import moe.ouom.neriplayer.core.player.download.network.normalizeDownloadParalle
 import moe.ouom.neriplayer.data.settings.AutoSettingsSchema
 import moe.ouom.neriplayer.data.settings.autoSettingFlow
 import moe.ouom.neriplayer.data.settings.download.normalizeDownloadBiliAudioQuality
+import moe.ouom.neriplayer.data.settings.download.normalizeDownloadKugouAudioQuality
 import moe.ouom.neriplayer.data.settings.download.normalizeDownloadNeteaseAudioQuality
 import moe.ouom.neriplayer.data.settings.download.normalizeDownloadYouTubeAudioQuality
 import moe.ouom.neriplayer.data.settings.download.readDownloadFollowPlaybackAudioQualityStartupValue
@@ -281,7 +282,8 @@ private fun SettingsDownloadExpandedContent(
 private enum class DownloadAudioQualityPlatform {
     NETEASE,
     YOUTUBE,
-    BILI
+    BILI,
+    KUGOU
 }
 
 internal const val DOWNLOAD_QUALITY_FOLLOW_PLAYBACK_CARD_TEST_TAG =
@@ -358,6 +360,7 @@ private fun DownloadAudioQualitySettings(
     val neteaseSetting = AutoSettingsSchema.download.downloadNeteaseAudioQuality
     val youtubeSetting = AutoSettingsSchema.download.downloadYouTubeAudioQuality
     val biliSetting = AutoSettingsSchema.download.downloadBiliAudioQuality
+    val kugouSetting = AutoSettingsSchema.download.downloadKugouAudioQuality
     val neteaseQuality by remember(repository, neteaseSetting) {
         repository.flow(neteaseSetting)
     }.collectAsState(initial = neteaseSetting.defaultValue)
@@ -367,6 +370,9 @@ private fun DownloadAudioQualitySettings(
     val biliQuality by remember(repository, biliSetting) {
         repository.flow(biliSetting)
     }.collectAsState(initial = biliSetting.defaultValue)
+    val kugouQuality by remember(repository, kugouSetting) {
+        repository.flow(kugouSetting)
+    }.collectAsState(initial = kugouSetting.defaultValue)
     var dialogPlatform by remember { mutableStateOf<DownloadAudioQualityPlatform?>(null) }
 
     if (!followsPlaybackQuality) {
@@ -434,6 +440,23 @@ private fun DownloadAudioQualitySettings(
                 highlightPulse = highlightPulse,
                 onHighlightFinished = onHighlightFinished
             )
+
+            DownloadAudioQualityListItem(
+                setting = kugouSetting,
+                value = normalizeDownloadKugouAudioQuality(kugouQuality),
+                valueLabel = stringResource(
+                    when (normalizeDownloadKugouAudioQuality(kugouQuality)) {
+                        "128" -> CoreCommonR.string.settings_audio_quality_standard
+                        "320" -> CoreCommonR.string.settings_audio_quality_high
+                        "flac" -> CoreCommonR.string.quality_lossless
+                        else -> CoreCommonR.string.quality_hires
+                    }
+                ),
+                onClick = { dialogPlatform = DownloadAudioQualityPlatform.KUGOU },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished
+            )
         }
     }
 
@@ -495,6 +518,24 @@ private fun DownloadAudioQualitySettings(
                     onSelect = { value ->
                         dialogPlatform = null
                         scope.launch { repository.set(biliSetting, value) }
+                    }
+                )
+            }
+
+            DownloadAudioQualityPlatform.KUGOU -> {
+                QualityOptionsDialog(
+                    title = stringResource(CoreCommonR.string.settings_download_kugou_audio_quality),
+                    selectedValue = normalizeDownloadKugouAudioQuality(kugouQuality),
+                    options = listOf(
+                        "128" to stringResource(CoreCommonR.string.settings_audio_quality_standard),
+                        "320" to stringResource(CoreCommonR.string.settings_audio_quality_high),
+                        "flac" to stringResource(CoreCommonR.string.quality_lossless),
+                        "hires" to stringResource(CoreCommonR.string.quality_hires)
+                    ),
+                    onDismiss = { dialogPlatform = null },
+                    onSelect = { value ->
+                        dialogPlatform = null
+                        scope.launch { repository.set(kugouSetting, value) }
                     }
                 )
             }

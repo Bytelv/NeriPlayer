@@ -42,6 +42,9 @@ import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchSource
 import moe.ouom.neriplayer.data.model.lyrics.matching.EditableLyricMatchConfidence
 import moe.ouom.neriplayer.platform.lyrics.repository.EditableLyricsMatcher
 import moe.ouom.neriplayer.platform.lyrics.repository.LrcLibLyricsRepository
+import moe.ouom.neriplayer.platform.kugou.lyrics.KugouPlaybackLyricResult
+import moe.ouom.neriplayer.platform.kugou.lyrics.KugouPlaybackLyricsResolver
+import moe.ouom.neriplayer.core.player.media.PlaybackMediaItemFactory
 import moe.ouom.neriplayer.data.model.lyrics.matching.RankedEditableLyricMatch
 import moe.ouom.neriplayer.platform.lyrics.matching.editableLyricMatchSourcePriority
 import moe.ouom.neriplayer.platform.lyrics.matching.extractPlainLyricsFromCollapsedTimedLyrics
@@ -223,6 +226,37 @@ fun shouldTryPreferredLyricSource(
     !song.isLocalSong() &&
     resolveStoredLyricText(song.matchedLyric, song.originalLyric) != ""
 
+/**
+ * 是否为酷狗音源曲目 (`audioId` 是酷狗 FileHash)
+ */
+fun isKugouSourceSong(song: SongItem): Boolean = PlaybackMediaItemFactory.isKugouSource(song)
+
+/**
+ * 酷狗音源曲目是否应由酷狗自己提供平台歌词
+ *
+ * [SongItem.matchedLyricSource] 为空说明还没有任何跨源匹配结果;
+ * 匹配结果本身就是 [MusicPlatform.KUGOU] 时同样该走酷狗自己的取词链路。
+ * 其余情况(例如用户手动匹配到网易云)必须尊重既有选择, 不接管。
+ */
+fun shouldResolveKugouPlatformLyrics(song: SongItem): Boolean =
+    isKugouSourceSong(song) &&
+        (song.matchedLyricSource == null || song.matchedLyricSource == MusicPlatform.KUGOU)
+
+/**
+ * 播放期酷狗取词的缓存键
+ *
+ * 同一首歌可能被主歌词、翻译歌词与前台快照分别请求, 用 hash + 标题 + 时长去重。
+ */
+internal fun buildKugouPlaybackLyricsCacheKey(song: SongItem): String = buildString {
+    append(song.audioId.orEmpty().trim())
+    append('|')
+    append(song.name.trim())
+    append('|')
+    append(song.artist.trim())
+    append('|')
+    append(song.durationMs)
+}
+
 internal fun shouldBlockExternalYouTubeMusicTranslation(rawLyric: String?): Boolean {
     return when (resolveLocalLyricOverrideState(rawLyric)) {
         LocalLyricOverrideState.ABSENT -> false
@@ -268,6 +302,8 @@ internal fun sanitizeYouTubeMusicLyricsCacheEntry(
 }
 
 object PlayerLyricsProvider {
+    private const val KUGOU_PLAYBACK_LYRICS_CACHE_SIZE = 24
+
     internal interface NeteaseLyricsCacheStore {
         fun get(songId: Long): NeteaseLyricsCacheEntry?
 
@@ -286,6 +322,9 @@ object PlayerLyricsProvider {
 
     private val amllLyricsCache = LruCache<String, List<LyricEntry>>(40)
     private val preferredLyricSourceCache = LruCache<String, PreferredLyricSourceResult>(40)
+
+    /** 酷狗取词结果按歌曲缓存, 主歌词/翻译歌词/前台快照共用一次网络结果 */
+    private val kugouPlaybackLyricsCache = LinkedHashMap<String, KugouPlaybackLyricResult>()
     private val neteaseRefreshInFlight = ConcurrentHashMap.newKeySet<Long>()
     private val neteaseColdLoadLocks = ConcurrentHashMap<Long, Mutex>()
     private val lyricsCacheGeneration = AtomicLong(0L)
@@ -304,6 +343,7 @@ object PlayerLyricsProvider {
             lyricsCacheGeneration.incrementAndGet()
             amllLyricsCache.evictAll()
             preferredLyricSourceCache.evictAll()
+            kugouPlaybackLyricsCache.clear()
             LocalMediaSupport.clearLyricsLookupCache()
         }
     }
@@ -316,6 +356,7 @@ object PlayerLyricsProvider {
             lyricsCacheGeneration.incrementAndGet()
             amllLyricsCache.evictAll()
             preferredLyricSourceCache.evictAll()
+            kugouPlaybackLyricsCache.clear()
             LocalMediaSupport.clearLyricsLookupCache()
             neteaseLyricsCache.evictAll()
             ytMusicLyricsCache.evictAll()
@@ -724,6 +765,69 @@ object PlayerLyricsProvider {
         return convertPlainLyricsToEntries(rawLyric, durationMs)
     }
 
+    /**
+     * 酷狗音源曲目取词
+     *
+     * `audioId` 就是 FileHash, 交给 [KugouPlaybackLyricsResolver] 走
+     * "hash 精确检索 -> 文本检索 -> LRCLIB" 回退链; 结果按歌曲缓存,
+     * 避免主歌词与翻译歌词两条链路各打一次网络。
+     */
+    private suspend fun resolveKugouPlaybackLyrics(
+        song: SongItem,
+        kugouPlaybackLyricsResolver: KugouPlaybackLyricsResolver
+    ): KugouPlaybackLyricResult? {
+        val cacheKey = buildKugouPlaybackLyricsCacheKey(song)
+        withLyricsCacheReadLock { kugouPlaybackLyricsCache[cacheKey] }?.let { return it }
+        val resolved = kugouPlaybackLyricsResolver.resolve(
+            hash = song.audioId,
+            title = song.name,
+            artist = song.artist,
+            durationMs = song.durationMs
+        ) ?: return null
+        withLyricsCacheWriteLock {
+            if (kugouPlaybackLyricsCache.size >= KUGOU_PLAYBACK_LYRICS_CACHE_SIZE) {
+                kugouPlaybackLyricsCache.keys.firstOrNull()?.let(kugouPlaybackLyricsCache::remove)
+            }
+            kugouPlaybackLyricsCache[cacheKey] = resolved
+        }
+        return resolved
+    }
+
+    /**
+     * 把酷狗取词结果解析成 [PreferredLyricSourceResult]
+     *
+     * 解析失败返回 null, 让调用方继续走后续回退, 而不是把空歌词当成命中。
+     */
+    private fun buildKugouPreferredLyricSourceResult(
+        song: SongItem,
+        result: KugouPlaybackLyricResult,
+        source: LyricSourcePreference
+    ): PreferredLyricSourceResult? {
+        val entries = parseMatchedExternalLyricEntries(
+            rawLyric = result.lyrics,
+            durationMs = song.durationMs,
+            logPrefix = "酷狗歌词解析失败"
+        )
+        if (entries.isEmpty()) {
+            return null
+        }
+        val translatedEntries = result.translatedLyrics
+            ?.takeIf { it.isNotBlank() }
+            ?.let { translatedLyrics ->
+                parseMatchedExternalLyricEntries(
+                    rawLyric = translatedLyrics,
+                    durationMs = song.durationMs,
+                    logPrefix = "酷狗翻译歌词解析失败"
+                )
+            }
+            .orEmpty()
+        return PreferredLyricSourceResult(
+            lyrics = entries,
+            translatedLyrics = translatedEntries,
+            source = source
+        )
+    }
+
     suspend fun getNeteaseLyrics(
         songId: Long,
         neteaseClient: NeteaseClient,
@@ -810,6 +914,7 @@ object PlayerLyricsProvider {
         neteaseClient: NeteaseClient,
         neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>,
         editableLyricsMatcher: EditableLyricsMatcher,
+        kugouPlaybackLyricsResolver: KugouPlaybackLyricsResolver,
         preferWordTimedLyrics: Boolean,
         defaultLyricSource: LyricSourcePreference,
         ytMusicLyricsCache: LruCache<String, YouTubeMusicLyricsCacheEntry>,
@@ -822,7 +927,8 @@ object PlayerLyricsProvider {
                 preferWordTimed = preferWordTimedLyrics,
                 editableLyricsMatcher = editableLyricsMatcher,
                 neteaseClient = neteaseClient,
-                neteaseLyricsCache = neteaseLyricsCache
+                neteaseLyricsCache = neteaseLyricsCache,
+                kugouPlaybackLyricsResolver = kugouPlaybackLyricsResolver
             )?.let { return@withContext it.translatedLyrics }
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
             val isManagedLocalDownload = isManagedLocalLyricsSourceForSong(application, song)
@@ -907,6 +1013,13 @@ object PlayerLyricsProvider {
             if (!shouldLoadRemoteLyrics(song)) {
                 return@withContext emptyList()
             }
+            if (shouldResolveKugouPlatformLyrics(song)) {
+                // 酷狗 KRC 自带翻译轨; 未命中时不再拿合成 id 去网易云碰运气
+                return@withContext resolveKugouPlaybackLyrics(song, kugouPlaybackLyricsResolver)
+                    ?.let { buildKugouPreferredLyricSourceResult(song, it, LyricSourcePreference.Kugou) }
+                    ?.translatedLyrics
+                    .orEmpty()
+            }
             if (isYouTubeMusicTrack) {
                 val storedLyric = resolveStoredLyricText(
                     currentLyric = song.matchedLyric,
@@ -966,6 +1079,7 @@ object PlayerLyricsProvider {
         neteaseClient: NeteaseClient,
         neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>,
         editableLyricsMatcher: EditableLyricsMatcher,
+        kugouPlaybackLyricsResolver: KugouPlaybackLyricsResolver,
         preferWordTimedLyrics: Boolean,
         defaultLyricSource: LyricSourcePreference,
         biliSourceTag: String
@@ -977,7 +1091,8 @@ object PlayerLyricsProvider {
                 preferWordTimed = preferWordTimedLyrics,
                 editableLyricsMatcher = editableLyricsMatcher,
                 neteaseClient = neteaseClient,
-                neteaseLyricsCache = neteaseLyricsCache
+                neteaseLyricsCache = neteaseLyricsCache,
+                kugouPlaybackLyricsResolver = kugouPlaybackLyricsResolver
             )?.let { return@withContext it.romanizedLyrics }
             val isManagedLocalDownload = isManagedLocalLyricsSourceForSong(application, song)
             val canReadManagedDownloadLyrics = shouldReadManagedDownloadLyrics(
@@ -1029,6 +1144,10 @@ object PlayerLyricsProvider {
             if (isYouTubeMusicSong(song)) {
                 return@withContext emptyList()
             }
+            if (shouldResolveKugouPlatformLyrics(song)) {
+                // 酷狗没有音译轨; 关键是不要拿 hash 合成的 id 去网易云查音译(会命中无关歌曲)
+                return@withContext emptyList()
+            }
 
             if (song.album.startsWith(biliSourceTag)) {
                 return@withContext when (song.matchedLyricSource) {
@@ -1069,6 +1188,7 @@ object PlayerLyricsProvider {
         lrcLibClient: LrcLibLyricsRepository,
         editableLyricsMatcher: EditableLyricsMatcher,
         amllTtmlClient: AmllLyricsRepository,
+        kugouPlaybackLyricsResolver: KugouPlaybackLyricsResolver,
         amllLyricsEnabled: Boolean,
         preferWordTimedLyrics: Boolean,
         defaultLyricSource: LyricSourcePreference,
@@ -1082,7 +1202,8 @@ object PlayerLyricsProvider {
                 preferWordTimed = preferWordTimedLyrics,
                 editableLyricsMatcher = editableLyricsMatcher,
                 neteaseClient = neteaseClient,
-                neteaseLyricsCache = neteaseLyricsCache
+                neteaseLyricsCache = neteaseLyricsCache,
+                kugouPlaybackLyricsResolver = kugouPlaybackLyricsResolver
             )?.let { return@withContext it.lyrics }
             val isYouTubeMusicTrack = isYouTubeMusicSong(song)
             val isManagedLocalDownload = isManagedLocalLyricsSourceForSong(application, song)
@@ -1186,6 +1307,24 @@ object PlayerLyricsProvider {
                     fallbackPlainLyrics = deferredCollapsedLyrics
                 )
             }
+            if (shouldResolveKugouPlatformLyrics(song)) {
+                resolveKugouPlaybackLyrics(song, kugouPlaybackLyricsResolver)
+                    ?.let { buildKugouPreferredLyricSourceResult(song, it, LyricSourcePreference.Kugou) }
+                    ?.takeIf { it.lyrics.isNotEmpty() }
+                    ?.let { return@withContext it.lyrics }
+                NPLogger.d(
+                    "NERI-PlayerManager",
+                    "酷狗歌词完全未命中, 回退 AMLL: ${song.name}"
+                )
+                if (!preferWordTimedLyrics || !amllLyricsEnabled) {
+                    return@withContext emptyList()
+                }
+                return@withContext loadAmllLyricsWithCache(
+                    song = song,
+                    amllTtmlClient = amllTtmlClient,
+                    requireDurationMatch = false
+                )
+            }
 
             val platformLyrics = when {
                 song.album.startsWith(biliSourceTag) -> emptyList()
@@ -1255,12 +1394,31 @@ object PlayerLyricsProvider {
         preferWordTimed: Boolean,
         editableLyricsMatcher: EditableLyricsMatcher,
         neteaseClient: NeteaseClient,
-        neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>
+        neteaseLyricsCache: LruCache<Long, NeteaseLyricsCacheEntry>,
+        kugouPlaybackLyricsResolver: KugouPlaybackLyricsResolver
     ): PreferredLyricSourceResult? {
         if (!shouldTryPreferredLyricSource(song, preference)) return null
         val cacheKey = preferredLyricSourceCacheKey(song, preference, preferWordTimed)
         peekPreferredLyricSourceResult(song, preference, preferWordTimed)?.let { return it }
         val cacheGeneration = currentLyricsCacheGeneration()
+        if (preference == LyricSourcePreference.Kugou && isKugouSourceSong(song)) {
+            // 酷狗音源曲目的 audioId 就是 FileHash: 按 hash 精确取词, 比下面的
+            // 歌名+歌手文本匹配准得多, 也不会因为 durationMs 缺失而整条链路失效。
+            val kugouResult = resolveKugouPlaybackLyrics(song, kugouPlaybackLyricsResolver)
+                ?.let { buildKugouPreferredLyricSourceResult(song, it, preference) }
+            if (kugouResult != null) {
+                withLyricsCacheWriteLock {
+                    if (lyricsCacheGeneration.get() == cacheGeneration) {
+                        preferredLyricSourceCache.put(cacheKey, kugouResult)
+                    }
+                }
+                return kugouResult
+            }
+            NPLogger.d(
+                "NERI-PlayerManager",
+                "酷狗 hash 取词未命中, 回退酷狗文本匹配: ${song.name}"
+            )
+        }
         if (preference == LyricSourcePreference.CloudMusic &&
             song.matchedLyricSource == MusicPlatform.CLOUD_MUSIC
         ) {

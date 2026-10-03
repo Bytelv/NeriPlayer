@@ -423,6 +423,29 @@ class StartupOnboardingProgressTest {
         )
     }
 
+    /** 酷狗是第四个平台: 只登录了酷狗时不应再提示"尚未连接任何平台" */
+    @Test
+    fun noPlatformWarningIsSuppressedWhenOnlyKugouIsConnected() {
+        assertEquals(
+            false,
+            shouldWarnStartupNoPlatformConnected(
+                biliState = SavedCookieAuthState.Missing,
+                neteaseState = SavedCookieAuthState.Missing,
+                youTubeState = YouTubeAuthState.Missing,
+                kugouConnected = true
+            )
+        )
+        assertEquals(
+            true,
+            shouldWarnStartupNoPlatformConnected(
+                biliState = SavedCookieAuthState.Missing,
+                neteaseState = SavedCookieAuthState.Missing,
+                youTubeState = YouTubeAuthState.Missing,
+                kugouConnected = false
+            )
+        )
+    }
+
     @Test
     fun coverPreviewKeepsTheActiveLyricCenteredAsLinesShrink() {
         val defaultWindow = resolveOnboardingCoverPreviewWindow(

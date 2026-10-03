@@ -24,15 +24,20 @@ package moe.ouom.neriplayer.ui.screen.debug
  */
 
 import android.app.Application
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
@@ -40,8 +45,13 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
+import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
+import moe.ouom.neriplayer.ui.haptic.HapticIconButton
+import moe.ouom.neriplayer.ui.util.toKugouQueueSong
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
 import moe.ouom.neriplayer.ui.viewmodel.debug.SearchApiProbeViewModel
 
@@ -111,13 +121,23 @@ fun SearchApiProbeScreen() {
                     modifier = Modifier.fillMaxWidth()
                 ) { Text(stringResource(CoreCommonR.string.debug_search_qq)) }
 
+                Button(
+                    onClick = vm::searchKugou,
+                    enabled = !ui.kugouSearching && ui.keyword.isNotBlank(),
+                    modifier = Modifier.fillMaxWidth()
+                ) { Text(stringResource(CoreCommonR.string.platform_kugou)) }
 
-                if (ui.running) {
+
+                if (ui.running || ui.kugouSearching) {
                     Spacer(Modifier.height(8.dp))
                     CircularProgressIndicator(modifier = Modifier.align(Alignment.CenterHorizontally))
                     Spacer(Modifier.height(8.dp))
                 }
             }
+        }
+
+        if (ui.kugouResults.isNotEmpty()) {
+            KugouSearchResultList(results = ui.kugouResults)
         }
 
         Card(
@@ -138,5 +158,67 @@ fun SearchApiProbeScreen() {
             }
         }
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+/**
+ * 酷狗搜索结果列表
+ *
+ * 歌曲元数据由搜索接口给出; 真正的播放/下载直链在点击加号后才按需解析,
+ * 未登录时播放器会提示去设置页登录。
+ */
+@Composable
+private fun KugouSearchResultList(results: List<SongSearchInfo>) {
+    val context = LocalContext.current
+    val addedMessage = stringResource(CoreCommonR.string.kugou_added_to_queue)
+
+    Card(
+        colors = CardDefaults.cardColors(
+            containerColor = MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)
+        )
+    ) {
+        Column(
+            Modifier.fillMaxWidth().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            Text(
+                text = stringResource(CoreCommonR.string.platform_kugou),
+                style = MaterialTheme.typography.titleMedium
+            )
+            results.forEach { result ->
+                ListItem(
+                    headlineContent = { Text(result.songName, maxLines = 1) },
+                    supportingContent = {
+                        Text(
+                            text = listOfNotNull(
+                                result.singer.takeIf { it.isNotBlank() },
+                                result.albumName?.takeIf { it.isNotBlank() }
+                            ).joinToString(" · "),
+                            maxLines = 1
+                        )
+                    },
+                    leadingContent = {
+                        AsyncImage(
+                            model = result.coverUrl?.replaceFirst("http://", "https://"),
+                            contentDescription = result.songName,
+                            modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
+                        )
+                    },
+                    trailingContent = {
+                        HapticIconButton(
+                            onClick = {
+                                PlayerManager.addToQueueEnd(result.toKugouQueueSong())
+                                Toast.makeText(context, addedMessage, Toast.LENGTH_SHORT).show()
+                            }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Filled.Add,
+                                contentDescription = stringResource(CoreCommonR.string.kugou_add_to_queue)
+                            )
+                        }
+                    }
+                )
+            }
+        }
     }
 }

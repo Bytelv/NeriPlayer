@@ -56,8 +56,10 @@ import moe.ouom.neriplayer.core.player.playback.preparePlayerForManagedStart
 import moe.ouom.neriplayer.core.player.playback.startProgressUpdates
 import moe.ouom.neriplayer.core.player.prefetch.consumeGenericUrlPrefetch
 import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
+import moe.ouom.neriplayer.core.player.quality.effectiveKugouQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
+import moe.ouom.neriplayer.platform.kugou.api.KugouApiException
 import moe.ouom.neriplayer.platform.netease.api.playback.parser.NeteasePlaybackResponseParser
 import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseAutoBiliSource
 import moe.ouom.neriplayer.core.player.resolver.netease.tryResolveNeteaseMatchedLocalSource
@@ -373,6 +375,11 @@ internal suspend fun PlayerManager.resolveSongUrl(
                 suppressError = suppressError,
                 sideEffects = resolverSideEffects,
                 playbackRequestTokenOverride = playbackRequestTokenOverride
+            )
+            isKugouTrack(song) -> getKugouAudioUrl(
+                song = song,
+                suppressError = suppressError,
+                sideEffects = resolverSideEffects
             )
             else -> getNeteaseSongUrl(
                 song = song,
@@ -1851,6 +1858,94 @@ private suspend fun PlayerManager.getBiliAudioUrl(
                         getLocalizedString(
                             CoreCommonR.string.player_playback_url_error_detail,
                             e.message.orEmpty()
+                        )
+                    )
+                )
+            }
+        }
+        SongUrlResult.Failure
+    }
+}
+
+/**
+ * 酷狗在线播放地址解析
+ *
+ * 歌曲身份取自 `audioId`(FileHash); 未登录时后端返回"本次请求需要验证",
+ * 这里翻译成明确的登录提示而不是笼统的"无播放地址"。
+ */
+private suspend fun PlayerManager.getKugouAudioUrl(
+    song: SongItem,
+    suppressError: Boolean = false,
+    sideEffects: RefreshResolverSideEffects = RefreshResolverSideEffects()
+): SongUrlResult = withContext(Dispatchers.IO) {
+    val hash = song.audioId?.trim()?.takeIf { it.isNotBlank() }
+    if (hash == null) {
+        NPLogger.w(
+            "NERI-PlayerManager",
+            "酷狗歌曲缺少 hash: song=${song.name}, album=${song.album}"
+        )
+        if (!suppressError) {
+            sideEffects.emitError {
+                postPlayerEvent(
+                    PlayerEvent.ShowError(
+                        getLocalizedString(CoreCommonR.string.player_playback_url_error_detail, "Kugou hash missing")
+                    )
+                )
+            }
+        }
+        return@withContext SongUrlResult.Failure
+    }
+
+    val preferredQuality = effectiveKugouQuality()
+    try {
+        val playUrl = kugouPlaybackRepository.resolvePlayUrl(
+            hash = hash,
+            albumId = song.subAudioId,
+            albumAudioId = song.playlistContextId,
+            preferredQuality = preferredQuality
+        )
+        if (playUrl == null) {
+            if (!suppressError) {
+                sideEffects.emitError {
+                    postPlayerEvent(PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.error_no_play_url)))
+                }
+            }
+            return@withContext SongUrlResult.Failure
+        }
+
+        SongUrlResult.Success(
+            url = playUrl.url,
+            candidateUrls = playUrl.candidateUrls().drop(1),
+            mimeType = null,
+            expectedContentLength = playUrl.fileSize.takeIf { it > 0L },
+            durationMs = playUrl.durationMs.takeIf { it > 0L } ?: song.durationMs.takeIf { it > 0L },
+            audioInfo = buildKugouPlaybackAudioInfo(
+                playUrl = playUrl,
+                requestedQualityKey = preferredQuality,
+                fallbackDurationMs = song.durationMs,
+                getLocalizedString = { getLocalizedString(it) }
+            )
+        )
+    } catch (error: KugouApiException.SessionRequired) {
+        NPLogger.w("NERI-PlayerManager", "酷狗需要登录后才能获取播放地址: song=${song.name}")
+        if (!suppressError) {
+            sideEffects.emitError {
+                postPlayerEvent(
+                    PlayerEvent.ShowError(getLocalizedString(CoreCommonR.string.kugou_login_required_playback))
+                )
+            }
+        }
+        SongUrlResult.RequiresLogin
+    } catch (error: Exception) {
+        if (error is CancellationException) throw error
+        NPLogger.e("NERI-PlayerManager", "酷狗播放地址解析失败", error)
+        if (!suppressError) {
+            sideEffects.emitError {
+                postPlayerEvent(
+                    PlayerEvent.ShowError(
+                        getLocalizedString(
+                            CoreCommonR.string.player_playback_url_error_detail,
+                            error.message.orEmpty()
                         )
                     )
                 )

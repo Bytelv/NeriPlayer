@@ -193,17 +193,24 @@ internal fun exploreSearchSourceDisplayOrder(
     youtubeEnabled: Boolean
 ): List<SearchSource> {
     return if (!youtubeEnabled) {
-        listOf(SearchSource.NETEASE, SearchSource.BILIBILI, SearchSource.LINK_RECOGNITION)
+        listOf(
+            SearchSource.NETEASE,
+            SearchSource.KUGOU,
+            SearchSource.BILIBILI,
+            SearchSource.LINK_RECOGNITION
+        )
     } else if (isInternational) {
         listOf(
             SearchSource.YOUTUBE_MUSIC,
             SearchSource.NETEASE,
+            SearchSource.KUGOU,
             SearchSource.BILIBILI,
             SearchSource.LINK_RECOGNITION
         )
     } else {
         listOf(
             SearchSource.NETEASE,
+            SearchSource.KUGOU,
             SearchSource.BILIBILI,
             SearchSource.YOUTUBE_MUSIC,
             SearchSource.LINK_RECOGNITION
@@ -263,6 +270,7 @@ private fun searchSourceLabel(source: SearchSource): String {
         SearchSource.YOUTUBE_MUSIC -> stringResource(CoreCommonR.string.explore_tab_youtube)
         SearchSource.NETEASE -> stringResource(CoreCommonR.string.platform_netease_short)
         SearchSource.BILIBILI -> stringResource(CoreCommonR.string.platform_bilibili)
+        SearchSource.KUGOU -> stringResource(CoreCommonR.string.platform_kugou_short)
         SearchSource.LINK_RECOGNITION -> stringResource(CoreCommonR.string.explore_tab_links)
     }
 }
@@ -1075,6 +1083,14 @@ fun ExploreScreen(
                         SearchSource.BILIBILI -> {
                             Box(Modifier.fillMaxSize(), Alignment.Center) {
                                 Text(stringResource(CoreCommonR.string.explore_bili_desc), style = MaterialTheme.typography.bodyLarge)
+                            }
+                        }
+                        SearchSource.KUGOU -> {
+                            Box(Modifier.fillMaxSize(), Alignment.Center) {
+                                Text(
+                                    stringResource(CoreCommonR.string.explore_kugou_desc),
+                                    style = MaterialTheme.typography.bodyLarge
+                                )
                             }
                         }
                         SearchSource.YOUTUBE_MUSIC -> {

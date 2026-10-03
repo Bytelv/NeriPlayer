@@ -6,6 +6,7 @@ import moe.ouom.neriplayer.data.settings.appearance.DEFAULT_ENHANCED_ADVANCED_BL
 import moe.ouom.neriplayer.data.settings.appearance.EnhancedAdvancedBlurPreference
 import moe.ouom.neriplayer.data.settings.appearance.ThemeDefaults
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY
+import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_KUGOU_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.download.DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.model.settings.lyrics.DEFAULT_AMLL_TTML_LYRIC_OFFSET_MS
@@ -18,6 +19,7 @@ import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_ALIGNMENT_
 import moe.ouom.neriplayer.data.model.settings.lyrics.FLOATING_LYRICS_RENDER_STYLE_SHADOW
 import moe.ouom.neriplayer.data.settings.lyrics.LyricSourcePreferencePolicy
 import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY
+import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_KUGOU_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.settings.playback.DEFAULT_PLAYBACK_SERVICE_IDLE_SHUTDOWN_MINUTES
@@ -358,6 +360,18 @@ object AutoSettingsSchema {
         )
 
         @AutoSetting(
+            key = "kugou_audio_quality",
+            type = SettingValueType.String,
+            defaultString = "320",
+            order = 35,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val kugouAudioQuality = autoSetting(
+            titleRes = CoreCommonR.string.quality_kugou_default
+        )
+
+        @AutoSetting(
             key = "mobile_data_follow_default_audio_quality",
             type = SettingValueType.Boolean,
             defaultBoolean = true,
@@ -408,6 +422,18 @@ object AutoSettingsSchema {
         val mobileDataBiliAudioQuality = autoSetting(
             titleRes = CoreCommonR.string.settings_mobile_data_bili_audio_quality,
             iconRes = CoreCommonR.drawable.ic_bilibili
+        )
+
+        @AutoSetting(
+            key = "mobile_data_kugou_audio_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_MOBILE_DATA_KUGOU_AUDIO_QUALITY,
+            order = 75,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val mobileDataKugouAudioQuality = autoSetting(
+            titleRes = CoreCommonR.string.settings_mobile_data_kugou_audio_quality
         )
 
         @AutoSetting(
@@ -1446,6 +1472,20 @@ object AutoSettingsSchema {
             defaultValue = DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY,
             titleRes = CoreCommonR.string.settings_download_bili_audio_quality,
             iconRes = CoreCommonR.drawable.ic_bilibili
+        )
+
+        @AutoSetting(
+            key = "download_kugou_audio_quality",
+            type = SettingValueType.String,
+            defaultString = DEFAULT_DOWNLOAD_KUGOU_AUDIO_QUALITY,
+            order = 45,
+            ui = SettingUiType.Custom,
+            access = SettingAccessMode.KeyOnly
+        )
+        val downloadKugouAudioQuality = autoStringSetting(
+            key = "download_kugou_audio_quality",
+            defaultValue = DEFAULT_DOWNLOAD_KUGOU_AUDIO_QUALITY,
+            titleRes = CoreCommonR.string.settings_download_kugou_audio_quality
         )
 
         @AutoSetting(order = 50)

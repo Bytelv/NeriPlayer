@@ -83,6 +83,7 @@ import moe.ouom.neriplayer.ui.util.shouldAllowCollapsingTopAppBar
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.KugouPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.LibraryViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
@@ -96,6 +97,7 @@ enum class LibraryTab(val labelResId: Int) {
     NETEASE(CoreCommonR.string.library_tab_netease),
     NETEASEALBUM(CoreCommonR.string.library_tab_netease_album),
     BILI(CoreCommonR.string.library_tab_bilibili),
+    KUGOU(CoreCommonR.string.library_tab_kugou),
     QQMUSIC(CoreCommonR.string.library_tab_qqmusic)
 }
 
@@ -176,7 +178,8 @@ internal fun rememberHotPlaylists(): List<PlaybackStatsHotPlaylist>? {
 
 internal fun libraryTabDisplayOrder(
     isInternational: Boolean,
-    youtubeEnabled: Boolean = true
+    youtubeEnabled: Boolean = true,
+    kugouLoggedIn: Boolean = false
 ): List<LibraryTab> {
     val orderedTabs = if (isInternational && youtubeEnabled) {
         listOf(
@@ -185,6 +188,7 @@ internal fun libraryTabDisplayOrder(
             LibraryTab.YTMUSIC,
             LibraryTab.NETEASE,
             LibraryTab.BILI,
+            LibraryTab.KUGOU,
             LibraryTab.QQMUSIC
         )
     } else {
@@ -194,10 +198,17 @@ internal fun libraryTabDisplayOrder(
             LibraryTab.NETEASE,
             LibraryTab.YTMUSIC,
             LibraryTab.BILI,
+            LibraryTab.KUGOU,
             LibraryTab.QQMUSIC
         )
     }
-    return if (youtubeEnabled) orderedTabs else orderedTabs - LibraryTab.YTMUSIC
+    val youtubeFiltered = if (youtubeEnabled) {
+        orderedTabs
+    } else {
+        orderedTabs - LibraryTab.YTMUSIC
+    }
+    // 酷狗歌单接口需要登录态, 未登录时不显示该标签页
+    return if (kugouLoggedIn) youtubeFiltered else youtubeFiltered - LibraryTab.KUGOU
 }
 
 internal fun LibraryTab.asVisibleLibraryTab(): LibraryTab {
@@ -208,6 +219,7 @@ internal fun LibraryTab?.isRefreshable(): Boolean {
     return when (this?.asVisibleLibraryTab()) {
         LibraryTab.BILI,
         LibraryTab.YTMUSIC,
+        LibraryTab.KUGOU,
         LibraryTab.NETEASE -> true
         else -> false
     }
@@ -224,6 +236,7 @@ fun LibraryScreen(
     neteaseListState: LazyListState,
     youtubeMusicListState: LazyListState,
     biliListState: LazyListState,
+    kugouListState: LazyListState,
     qqMusicListState: LazyListState,
     topAppBarState: TopAppBarState,
     onLocalPlaylistClick: (LocalPlaylist) -> Unit = {},
@@ -234,6 +247,7 @@ fun LibraryScreen(
     onNeteaseArtistClick: (NeteaseArtistSummary) -> Unit = {},
     onYouTubeMusicPlaylistClick: (YouTubeMusicPlaylist) -> Unit = {},
     onBiliPlaylistClick: (BiliPlaylist) -> Unit = {},
+    onKugouPlaylistClick: (KugouPlaylist) -> Unit = {},
     onOpenRecent: () -> Unit = {},
     onOpenStats: () -> Unit = {},
     offlineMode: Boolean = false
@@ -249,8 +263,9 @@ fun LibraryScreen(
         .collectAsStateWithLifecycle(initialValue = false)
     val youtubeEnabled by AppContainer.settingsRepo.youtubeEnabledFlow
         .collectAsStateWithLifecycle(initialValue = YouTubeFeatureGate.isEnabled())
-    val orderedTabs = remember(isInternational, youtubeEnabled) {
-        libraryTabDisplayOrder(isInternational, youtubeEnabled)
+    val kugouLoggedIn = ui.kugouLoggedIn
+    val orderedTabs = remember(isInternational, youtubeEnabled, kugouLoggedIn) {
+        libraryTabDisplayOrder(isInternational, youtubeEnabled, kugouLoggedIn)
     }
     val initialPage = remember(orderedTabs, initialTab) {
         orderedTabs.indexOf(initialTab.asVisibleLibraryTab()).takeIf { it >= 0 } ?: 0
@@ -305,6 +320,11 @@ fun LibraryScreen(
                 LibraryTab.QQMUSIC -> shouldAllowCollapsingTopAppBar(
                     qqMusicListState.canScrollForward,
                     qqMusicListState.canScrollBackward,
+                    topAppBarState.collapsedFraction
+                )
+                LibraryTab.KUGOU -> shouldAllowCollapsingTopAppBar(
+                    kugouListState.canScrollForward,
+                    kugouListState.canScrollBackward,
                     topAppBarState.collapsedFraction
                 )
                 null -> shouldAllowCollapsingTopAppBar(
@@ -390,6 +410,7 @@ fun LibraryScreen(
                         when (currentTab) {
                             LibraryTab.BILI -> vm.refreshBilibili()
                             LibraryTab.YTMUSIC -> vm.refreshYouTubeMusicPlaylists()
+                            LibraryTab.KUGOU -> vm.refreshKugouPlaylists()
                             LibraryTab.NETEASE -> {
                                 vm.refreshNeteasePlaylists()
                                 vm.refreshNeteaseAlbums()
@@ -476,6 +497,19 @@ fun LibraryScreen(
 
                         LibraryTab.QQMUSIC -> QqMusicPlaylistList(
                             listState = qqMusicListState
+                        )
+
+                        LibraryTab.KUGOU -> KugouPlaylistList(
+                            playlists = ui.kugouPlaylists,
+                            error = ui.kugouError,
+                            loading = ui.kugouLoading,
+                            loadingMore = ui.kugouLoadingMore,
+                            hasMore = ui.kugouHasMore,
+                            listState = kugouListState,
+                            onClick = onKugouPlaylistClick,
+                            onRetry = { vm.refreshKugouPlaylists() },
+                            onLoadMore = { vm.loadMoreKugouPlaylists() },
+                            offlineMode = offlineMode
                         )
                     }
                 }

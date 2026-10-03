@@ -161,7 +161,8 @@ class PlaybackMediaItemFactoryTest {
         neteaseFallbackEnabled = { true },
         youtubeQuality = { qualityReads += "youtube"; "very_high" },
         biliQuality = { qualityReads += "bili"; "lossless" },
-        neteaseQuality = { qualityReads += "netease"; "exhigh" }
+        neteaseQuality = { qualityReads += "netease"; "exhigh" },
+        kugouQuality = { qualityReads += "kugou"; "320" }
     )
 
     private fun song(

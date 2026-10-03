@@ -1,6 +1,7 @@
 package moe.ouom.neriplayer.data.settings.playback
 
 import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY
+import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_KUGOU_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_NETEASE_AUDIO_QUALITY
 import moe.ouom.neriplayer.data.model.settings.playback.DEFAULT_MOBILE_DATA_YOUTUBE_AUDIO_QUALITY
 
@@ -31,6 +32,13 @@ private val BILI_MOBILE_DATA_AUDIO_QUALITIES = setOf(
     "dolby"
 )
 
+private val KUGOU_MOBILE_DATA_AUDIO_QUALITIES = setOf(
+    "128",
+    "320",
+    "flac",
+    "hires"
+)
+
 fun normalizeMobileDataNeteaseAudioQuality(value: String?): String {
     val normalized = value?.trim()?.lowercase().orEmpty()
     return normalized.takeIf { it in NETEASE_MOBILE_DATA_AUDIO_QUALITIES }
@@ -47,6 +55,12 @@ fun normalizeMobileDataBiliAudioQuality(value: String?): String {
     val normalized = value?.trim()?.lowercase().orEmpty()
     return normalized.takeIf { it in BILI_MOBILE_DATA_AUDIO_QUALITIES }
         ?: DEFAULT_MOBILE_DATA_BILI_AUDIO_QUALITY
+}
+
+fun normalizeMobileDataKugouAudioQuality(value: String?): String {
+    val normalized = value?.trim()?.lowercase().orEmpty()
+    return normalized.takeIf { it in KUGOU_MOBILE_DATA_AUDIO_QUALITIES }
+        ?: DEFAULT_MOBILE_DATA_KUGOU_AUDIO_QUALITY
 }
 
 fun resolveLegacyMobileDataQualityPreset(

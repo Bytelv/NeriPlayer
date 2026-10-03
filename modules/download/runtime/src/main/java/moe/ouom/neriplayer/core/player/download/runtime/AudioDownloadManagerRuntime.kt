@@ -591,12 +591,14 @@ internal suspend fun AudioDownloadManager.executeDownloadSong(
                 DownloadAudioQualitySelection.normalized(
                     neteaseQuality = quality.neteaseQuality,
                     youtubeQuality = quality.youtubeQuality,
-                    biliQuality = quality.biliQuality
+                    biliQuality = quality.biliQuality,
+                    kugouQuality = quality.kugouQuality
                 )
             }
             ?: resolveDownloadAudioQualitySelection(context)
         val isYouTubeMusic = isYouTubeMusicSong(song)
         val isBili = AudioDownloadSourceResolver.isBiliSource(song)
+        val isKugou = AudioDownloadSourceResolver.isKugouSource(song)
         // 阶段契约由尝试层按 stage = "source_resolved" 和
         // stage = "prepare_working_file" 顺序推进
         // 真实传输前才会调用 clearCompletedAudioReference(songKey)，再进入
@@ -611,6 +613,7 @@ internal suspend fun AudioDownloadManager.executeDownloadSong(
             downloadAudioQuality = resolvedDownloadAudioQuality,
             isYouTubeMusic = isYouTubeMusic,
             isBili = isBili,
+            isKugou = isKugou,
             state = state
         )
     } catch (error: Exception) {

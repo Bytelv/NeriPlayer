@@ -16,6 +16,8 @@ internal fun inferredSyncChannelId(album: String, mediaUri: String?, inferNeteas
     extractYouTubeMusicVideoId(mediaUri) != null -> "youtube_music"
     album.startsWith("Bilibili", ignoreCase = true) -> "bilibili"
     album.startsWith("Netease", ignoreCase = true) -> "netease"
+    // 酷狗来源没有专属 mediaUri, 只能靠 album 里的来源标记识别
+    album.startsWith("Kugou", ignoreCase = true) -> "kugou"
     inferNetease && mediaUri.isNullOrBlank() -> "netease"
     else -> null
 }

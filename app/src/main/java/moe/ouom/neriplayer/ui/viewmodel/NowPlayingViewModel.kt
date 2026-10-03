@@ -457,6 +457,7 @@ class NowPlayingViewModel : ViewModel() {
                 val api = when (platform) {
                     MusicPlatform.CLOUD_MUSIC -> AppContainer.cloudMusicSearchApi
                     MusicPlatform.QQ_MUSIC -> AppContainer.qqMusicSearchApi
+                    MusicPlatform.KUGOU -> AppContainer.kugouSearchApi
                 }
 
                 val songDetails = api.getSongInfo(selectedSong.id)

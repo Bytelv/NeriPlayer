@@ -16,6 +16,7 @@ import moe.ouom.neriplayer.common.coroutines.runCatchingNonCancellation
 internal const val DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY = "exhigh"
 internal const val DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY = "high"
 internal const val DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY = "high"
+internal const val DEFAULT_DOWNLOAD_KUGOU_AUDIO_QUALITY = "320"
 
 private val DOWNLOAD_NETEASE_AUDIO_QUALITIES = setOf(
     "standard",
@@ -44,6 +45,13 @@ private val DOWNLOAD_BILI_AUDIO_QUALITIES = setOf(
     "dolby"
 )
 
+private val DOWNLOAD_KUGOU_AUDIO_QUALITIES = setOf(
+    "128",
+    "320",
+    "flac",
+    "hires"
+)
+
 fun normalizeDownloadNeteaseAudioQuality(value: String?): String {
     val normalized = value.orEmpty().trim().lowercase()
     return normalized.takeIf { it in DOWNLOAD_NETEASE_AUDIO_QUALITIES }
@@ -62,26 +70,36 @@ fun normalizeDownloadBiliAudioQuality(value: String?): String {
         ?: DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY
 }
 
+fun normalizeDownloadKugouAudioQuality(value: String?): String {
+    val normalized = value.orEmpty().trim().lowercase()
+    return normalized.takeIf { it in DOWNLOAD_KUGOU_AUDIO_QUALITIES }
+        ?: DEFAULT_DOWNLOAD_KUGOU_AUDIO_QUALITY
+}
+
 fun resolveDownloadAudioQualitySelection(
     followsPlaybackQuality: Boolean,
     playbackNeteaseQuality: String?,
     playbackYouTubeQuality: String?,
     playbackBiliQuality: String?,
+    playbackKugouQuality: String?,
     downloadNeteaseQuality: String?,
     downloadYouTubeQuality: String?,
-    downloadBiliQuality: String?
+    downloadBiliQuality: String?,
+    downloadKugouQuality: String?
 ): DownloadAudioQualitySelection {
     return if (followsPlaybackQuality) {
         DownloadAudioQualitySelection.normalized(
             neteaseQuality = playbackNeteaseQuality,
             youtubeQuality = playbackYouTubeQuality,
-            biliQuality = playbackBiliQuality
+            biliQuality = playbackBiliQuality,
+            kugouQuality = playbackKugouQuality
         )
     } else {
         DownloadAudioQualitySelection.normalized(
             neteaseQuality = downloadNeteaseQuality,
             youtubeQuality = downloadYouTubeQuality,
-            biliQuality = downloadBiliQuality
+            biliQuality = downloadBiliQuality,
+            kugouQuality = downloadKugouQuality
         )
     }
 }
@@ -99,6 +117,7 @@ suspend fun resolveDownloadAudioQualitySelection(
             playbackNeteaseQuality = preferences[SettingsKeys.AUDIO_QUALITY],
             playbackYouTubeQuality = preferences[SettingsKeys.YOUTUBE_AUDIO_QUALITY],
             playbackBiliQuality = preferences[SettingsKeys.BILI_AUDIO_QUALITY],
+            playbackKugouQuality = preferences[SettingsKeys.KUGOU_AUDIO_QUALITY],
             downloadNeteaseQuality = preferences.valueOf(
                 AutoSettingsSchema.download.downloadNeteaseAudioQuality
             ),
@@ -107,13 +126,17 @@ suspend fun resolveDownloadAudioQualitySelection(
             ),
             downloadBiliQuality = preferences.valueOf(
                 AutoSettingsSchema.download.downloadBiliAudioQuality
+            ),
+            downloadKugouQuality = preferences.valueOf(
+                AutoSettingsSchema.download.downloadKugouAudioQuality
             )
         )
     }.getOrElse {
         DownloadAudioQualitySelection.normalized(
             neteaseQuality = DEFAULT_DOWNLOAD_NETEASE_AUDIO_QUALITY,
             youtubeQuality = DEFAULT_DOWNLOAD_YOUTUBE_AUDIO_QUALITY,
-            biliQuality = DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY
+            biliQuality = DEFAULT_DOWNLOAD_BILI_AUDIO_QUALITY,
+            kugouQuality = DEFAULT_DOWNLOAD_KUGOU_AUDIO_QUALITY
         )
     }
 }
@@ -148,11 +171,13 @@ fun updateDownloadFollowPlaybackAudioQualityStartupValue(
 fun DownloadAudioQualitySelection.Companion.normalized(
     neteaseQuality: String?,
     youtubeQuality: String?,
-    biliQuality: String?
+    biliQuality: String?,
+    kugouQuality: String? = null
 ): DownloadAudioQualitySelection {
     return DownloadAudioQualitySelection(
         neteaseQuality = normalizeDownloadNeteaseAudioQuality(neteaseQuality),
         youtubeQuality = normalizeDownloadYouTubeAudioQuality(youtubeQuality),
-        biliQuality = normalizeDownloadBiliAudioQuality(biliQuality)
+        biliQuality = normalizeDownloadBiliAudioQuality(biliQuality),
+        kugouQuality = normalizeDownloadKugouAudioQuality(kugouQuality)
     )
 }

@@ -59,6 +59,7 @@
     <string name="quality_netease_default">网易云默认音质</string>
     <string name="quality_bili_default">哔哩哔哩默认音质</string>
     <string name="quality_youtube_default">YouTube 默认音质</string>
+    <string name="quality_kugou_default">酷狗默认音质</string>
     <string name="device_speaker">手机扬声器</string>
     <string name="device_wired_headset">有线耳机</string>
     <string name="device_bluetooth_headset">蓝牙耳机</string>

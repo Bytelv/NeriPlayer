@@ -57,6 +57,24 @@ internal fun qualityLabelForYouTube(key: String, getLocalizedString: (Int) -> St
     else -> key
 }
 
+/**
+ * 酷狗后端以 `128` / `320` / `flac` / `hires` 作为音质等级
+ */
+internal fun qualityLabelForKugou(key: String, getLocalizedString: (Int) -> String): String = when (key) {
+    "128" -> getLocalizedString(CoreCommonR.string.quality_standard)
+    "320" -> getLocalizedString(CoreCommonR.string.settings_audio_quality_high)
+    "flac" -> getLocalizedString(CoreCommonR.string.quality_lossless)
+    "hires" -> getLocalizedString(CoreCommonR.string.quality_hires)
+    else -> key
+}
+
+internal fun buildKugouQualityOptions(getLocalizedString: (Int) -> String): List<PlaybackQualityOption> = listOf(
+    PlaybackQualityOption("128", qualityLabelForKugou("128", getLocalizedString)),
+    PlaybackQualityOption("320", qualityLabelForKugou("320", getLocalizedString)),
+    PlaybackQualityOption("flac", qualityLabelForKugou("flac", getLocalizedString)),
+    PlaybackQualityOption("hires", qualityLabelForKugou("hires", getLocalizedString))
+)
+
 internal fun buildNeteaseQualityOptions(getLocalizedString: (Int) -> String): List<PlaybackQualityOption> = listOf(
     PlaybackQualityOption("standard", qualityLabelForNetease("standard", getLocalizedString)),
     PlaybackQualityOption("higher", qualityLabelForNetease("higher", getLocalizedString)),
@@ -198,6 +216,61 @@ internal fun buildBiliPlaybackAudioInfo(
         mimeType = selectedStream.mimeType,
         bitrateKbps = selectedStream.bitrateKbps
     )
+}
+
+/**
+ * 酷狗直链音质信息
+ *
+ * `KugouPlayUrl.quality` 是实际命中的档位 (可能已降级), 没有时回退到请求档位
+ */
+internal fun buildKugouPlaybackAudioInfo(
+    playUrl: moe.ouom.neriplayer.data.model.kugou.KugouPlayUrl,
+    requestedQualityKey: String,
+    fallbackDurationMs: Long,
+    getLocalizedString: (Int) -> String
+): PlaybackAudioInfo {
+    val qualityKey = normalizeKugouQualityKey(playUrl.quality)
+        ?: normalizeKugouQualityKey(requestedQualityKey)
+        ?: "320"
+    val mimeType = kugouMimeType(playUrl.fileExtension, qualityKey)
+    return PlaybackAudioInfo(
+        source = PlaybackAudioSource.KUGOU,
+        qualityKey = qualityKey,
+        qualityLabel = qualityLabelForKugou(qualityKey, getLocalizedString),
+        qualityOptions = buildKugouQualityOptions(getLocalizedString),
+        codecLabel = deriveCodecLabel(mimeType),
+        mimeType = mimeType,
+        bitrateKbps = estimateBitrateKbps(
+            playUrl.fileSize.takeIf { it > 0L },
+            playUrl.durationMs.takeIf { it > 0L } ?: fallbackDurationMs
+        ) ?: kugouNominalBitrateKbps(qualityKey)
+    )
+}
+
+internal fun normalizeKugouQualityKey(value: String?): String? = value
+    ?.trim()
+    ?.lowercase()
+    ?.takeIf { it in KUGOU_QUALITY_KEYS }
+
+private val KUGOU_QUALITY_KEYS = setOf("128", "320", "flac", "hires")
+
+private fun kugouNominalBitrateKbps(qualityKey: String): Int? = when (qualityKey) {
+    "128" -> 128
+    "320" -> 320
+    else -> null
+}
+
+private fun kugouMimeType(fileExtension: String?, qualityKey: String): String? {
+    val ext = fileExtension?.trim()?.lowercase()?.removePrefix(".")
+    return when {
+        ext == "flac" -> "audio/flac"
+        ext == "mp3" -> "audio/mpeg"
+        ext == "m4a" || ext == "mp4" -> "audio/mp4"
+        ext == "aac" -> "audio/aac"
+        ext == "ogg" -> "audio/ogg"
+        qualityKey == "flac" || qualityKey == "hires" -> "audio/flac"
+        else -> "audio/mpeg"
+    }
 }
 
 internal fun buildYouTubePlaybackAudioInfo(

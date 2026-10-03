@@ -7,6 +7,7 @@ import moe.ouom.neriplayer.platform.lyrics.api.codec.decodeKugouKrcDownloadPaylo
 import moe.ouom.neriplayer.platform.lyrics.api.codec.decodeKugouLyricDownload
 import moe.ouom.neriplayer.platform.lyrics.api.codec.parseKugouLyricCandidates
 import moe.ouom.neriplayer.platform.lyrics.api.codec.parseKugouSearchResults
+import moe.ouom.neriplayer.platform.lyrics.matching.kugouLyricSearchKeyword
 import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouLyricCandidate
 import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouLyricsPayload
 import moe.ouom.neriplayer.data.model.lyrics.kugou.KugouSongSearchResult
@@ -38,16 +39,29 @@ class KugouLyricsClient(private val okHttpClient: OkHttpClient) {
             }
         }
 
+    /**
+     * 按 [KugouSongSearchResult] 检索歌词候选
+     *
+     * `keyword`/`duration`/`hash` 在歌词站都是可缺省参数: 时长未知(`durationMs <= 0`)时
+     * 不能发 `duration=0` 假装有时长, 否则歌词站会按 0 毫秒去比对而漏掉候选;
+     * 反过来只用 hash 也足够精确。因此三个参数都只在有值时带上。
+     */
     suspend fun searchLyricCandidates(song: KugouSongSearchResult): List<KugouLyricCandidate> {
-        val url = "https://lyrics.kugou.com/search".toHttpUrl().newBuilder()
+        val builder = "https://lyrics.kugou.com/search".toHttpUrl().newBuilder()
             .addQueryParameter("ver", "1")
             .addQueryParameter("man", "yes")
             .addQueryParameter("client", "pc")
-            .addQueryParameter("keyword", "${song.artist} - ${song.title}")
-            .addQueryParameter("duration", song.durationMs.toString())
-            .addQueryParameter("hash", song.hash)
-            .build()
-        val body = executeString(url.toString()) ?: return emptyList()
+        kugouLyricSearchKeyword(
+            title = song.title,
+            artist = song.artist
+        )?.let { keyword -> builder.addQueryParameter("keyword", keyword) }
+        song.hash.trim()
+            .takeIf { it.isNotEmpty() }
+            ?.let { hash -> builder.addQueryParameter("hash", hash) }
+        song.durationMs
+            .takeIf { it > 0L }
+            ?.let { durationMs -> builder.addQueryParameter("duration", durationMs.toString()) }
+        val body = executeString(builder.build().toString()) ?: return emptyList()
         return parseKugouLyricCandidates(body)
     }
 

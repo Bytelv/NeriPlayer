@@ -44,10 +44,20 @@ import moe.ouom.neriplayer.platform.lyrics.api.client.AmllTtmlClient
 import moe.ouom.neriplayer.platform.lyrics.repository.EditableLyricsMatcher
 import moe.ouom.neriplayer.platform.lyrics.repository.AmllLyricsRepository
 import moe.ouom.neriplayer.platform.lyrics.repository.KugouLyricsRepository
+import moe.ouom.neriplayer.platform.kugou.lyrics.KugouPlaybackLyricsResolver
 import moe.ouom.neriplayer.platform.lyrics.repository.LrcLibLyricsRepository
 import moe.ouom.neriplayer.platform.lyrics.repository.QQMusicLyricsRepository
 import moe.ouom.neriplayer.platform.lyrics.api.client.KugouLyricsClient
 import moe.ouom.neriplayer.platform.lyrics.api.client.LrcLibClient
+import moe.ouom.neriplayer.platform.kugou.api.KugouEndpointConfig
+import moe.ouom.neriplayer.platform.kugou.api.client.KugouAuthClient
+import moe.ouom.neriplayer.platform.kugou.api.client.KugouClient
+import moe.ouom.neriplayer.platform.kugou.api.client.KugouSearchApi
+import moe.ouom.neriplayer.platform.kugou.api.client.KugouSessionProvider
+import moe.ouom.neriplayer.platform.kugou.auth.KugouSessionRepository
+import moe.ouom.neriplayer.platform.kugou.repository.KugouPlaybackRepository
+import moe.ouom.neriplayer.platform.kugou.repository.KugouPlaylistRepository
+import moe.ouom.neriplayer.platform.kugou.repository.KugouVipRepository
 import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
 import moe.ouom.neriplayer.BuildConfig
 import moe.ouom.neriplayer.platform.search.api.client.CloudMusicSearchApi
@@ -250,6 +260,7 @@ object AppContainer {
     val listenTogetherPreferences by lazy { ListenTogetherPreferences(application) }
     val neteaseCookieRepo by lazy { NeteaseCookieRepository(application) }
     val biliCookieRepo by lazy { BiliCookieRepository(application) }
+    val kugouSessionRepo by lazy { KugouSessionRepository(application) }
     val youtubeAuthRepo by lazy { YouTubeAuthRepository(application) }
     internal val youtubeAuthAutoRefreshManager by lazy {
         YouTubeAuthAutoRefreshManager(
@@ -429,6 +440,23 @@ object AppContainer {
     val cloudMusicSearchApi by lazy {
         CloudMusicSearchApi(neteaseClient, sharedOkHttpClient, debugLogging = BuildConfig.DEBUG)
     }
+    val kugouClient by lazy {
+        KugouClient(
+            okHttpClient = sharedOkHttpClient,
+            baseUrlProvider = {
+                kugouSessionRepo.currentBaseUrl().ifBlank { KugouEndpointConfig.DEFAULT_BASE_URL }
+            },
+            sessionProvider = KugouSessionProvider { kugouSessionRepo.currentSession() },
+            debugLogging = BuildConfig.DEBUG
+        )
+    }
+    val kugouAuthClient by lazy { KugouAuthClient(kugouClient) }
+    val kugouSearchApi by lazy {
+        KugouSearchApi(kugouClient, debugLogging = BuildConfig.DEBUG)
+    }
+    val kugouPlaybackRepository by lazy { KugouPlaybackRepository(kugouClient) }
+    val kugouVipRepository by lazy { KugouVipRepository(kugouClient) }
+    val kugouPlaylistRepository by lazy { KugouPlaylistRepository(kugouClient) }
     val qqMusicSearchApi by lazy {
         QQMusicLyricsRepository(
             api = QQMusicSearchApi(sharedOkHttpClient, debugLogging = BuildConfig.DEBUG),
@@ -441,12 +469,20 @@ object AppContainer {
             when (platform) {
                 MusicPlatform.CLOUD_MUSIC -> cloudMusicSearchApi
                 MusicPlatform.QQ_MUSIC -> qqMusicSearchApi
+                MusicPlatform.KUGOU -> kugouSearchApi
             }
         }
     }
     val lrcLibClient by lazy { LrcLibLyricsRepository(LrcLibClient(sharedOkHttpClient)) }
     val amllTtmlClient by lazy { AmllLyricsRepository(AmllTtmlClient(sharedOkHttpClient)) }
     val kugouLyricsClient by lazy { KugouLyricsRepository(KugouLyricsClient(sharedOkHttpClient)) }
+    /** 酷狗音源曲目的播放期取词: FileHash 精确检索 -> 文本检索 -> LRCLIB */
+    val kugouPlaybackLyricsResolver by lazy {
+        KugouPlaybackLyricsResolver(
+            kugouLyricsRepository = kugouLyricsClient,
+            lrcLibLyricsRepository = lrcLibClient
+        )
+    }
     val editableLyricsMatcher by lazy {
         EditableLyricsMatcher(
             cloudMusicSearchApi = cloudMusicSearchApi,

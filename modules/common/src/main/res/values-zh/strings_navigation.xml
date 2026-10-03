@@ -23,4 +23,6 @@
     <string name="platform_bilibili">哔哩哔哩</string>
     <string name="platform_netease">网易云音乐</string>
     <string name="platform_netease_short">网易云</string>
+    <string name="platform_kugou">酷狗音乐</string>
+    <string name="platform_kugou_short">酷狗</string>
 </resources>

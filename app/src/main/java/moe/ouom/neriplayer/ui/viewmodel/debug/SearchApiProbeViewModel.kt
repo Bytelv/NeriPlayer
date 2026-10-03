@@ -37,13 +37,17 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
+import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.core.di.AppContainer
 
 data class SearchProbeUiState(
     val running: Boolean = false,
     val keyword: String = "mili",
     val lastMessage: String = "",
-    val lastJsonPreview: String = ""
+    val lastJsonPreview: String = "",
+    /** 酷狗结果可直接加入播放队列, 与 JSON 预览并存互不干扰 */
+    val kugouResults: List<SongSearchInfo> = emptyList(),
+    val kugouSearching: Boolean = false
 )
 
 class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
@@ -88,6 +92,7 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
                     when (platform) {
                         MusicPlatform.CLOUD_MUSIC -> cloudMusicApi.search(keyword, 1)
                         MusicPlatform.QQ_MUSIC -> qqMusicApi.search(keyword, 1)
+                        MusicPlatform.KUGOU -> AppContainer.kugouSearchApi.search(keyword, 1)
                     }
                 }
                 val resultJson = json.encodeToString(resultList)
@@ -110,5 +115,42 @@ class SearchApiProbeViewModel(app: Application) : AndroidViewModel(app) {
     private fun copyToClipboard(label: String, text: String) {
         val cm = getApplication<Application>().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
         cm.setPrimaryClip(ClipData.newPlainText(label, text))
+    }
+
+    /**
+     * 酷狗搜索并把结果留在界面上, 便于直接加入播放队列
+     */
+    fun searchKugou() {
+        val keyword = _ui.value.keyword.trim()
+        if (keyword.isEmpty()) {
+            _ui.value = _ui.value.copy(
+                lastMessage = getApplication<Application>().getString(CoreCommonR.string.debug_error_keyword_empty)
+            )
+            return
+        }
+        viewModelScope.launch {
+            _ui.value = _ui.value.copy(kugouSearching = true, kugouResults = emptyList())
+            try {
+                val results = withContext(Dispatchers.IO) {
+                    AppContainer.kugouSearchApi.search(keyword, page = 1)
+                }
+                _ui.value = _ui.value.copy(
+                    kugouSearching = false,
+                    kugouResults = results,
+                    lastMessage = getApplication<Application>().getString(
+                        CoreCommonR.string.debug_search_ok,
+                        MusicPlatform.KUGOU.name
+                    )
+                )
+            } catch (e: Exception) {
+                _ui.value = _ui.value.copy(
+                    kugouSearching = false,
+                    lastMessage = getApplication<Application>().getString(
+                        CoreCommonR.string.debug_call_failed,
+                        e.message ?: e.javaClass.simpleName
+                    )
+                )
+            }
+        }
     }
 }

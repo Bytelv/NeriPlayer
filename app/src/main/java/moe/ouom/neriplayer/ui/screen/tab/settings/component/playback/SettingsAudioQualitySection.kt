@@ -67,6 +67,12 @@ private const val NETEASE_SURROUND_QUALITY = "sky"
 private const val NETEASE_MASTER_QUALITY = "jymaster"
 private const val BILI_DOLBY_QUALITY = "dolby"
 
+/** 酷狗后端以 128 / 320 / flac / hires 作为音质等级 */
+private const val KUGOU_STANDARD_QUALITY = "128"
+private const val KUGOU_HIGH_QUALITY = "320"
+private const val KUGOU_LOSSLESS_QUALITY = "flac"
+private const val KUGOU_HIRES_QUALITY = "hires"
+
 private val NETEASE_MEMBER_QUALITIES = setOf(
     NETEASE_LOSSLESS_QUALITY,
     NETEASE_HIRES_QUALITY,
@@ -95,6 +101,9 @@ internal fun SettingsAudioQualitySection(
     biliQualityLabel: String,
     biliPreferredQuality: String,
     onBiliQualityChange: (String) -> Unit,
+    kugouQualityLabel: String,
+    kugouPreferredQuality: String,
+    onKugouQualityChange: (String) -> Unit,
     mobileDataFollowDefaultAudioQuality: Boolean,
     onMobileDataFollowDefaultAudioQualityChange: (Boolean) -> Unit,
     mobileDataNeteaseQualityLabel: String,
@@ -106,18 +115,25 @@ internal fun SettingsAudioQualitySection(
     mobileDataBiliQualityLabel: String,
     mobileDataBiliAudioQuality: String,
     onMobileDataBiliAudioQualityChange: (String) -> Unit,
+    mobileDataKugouQualityLabel: String,
+    mobileDataKugouAudioQuality: String,
+    onMobileDataKugouAudioQualityChange: (String) -> Unit,
     showQualityDialog: Boolean,
     onShowQualityDialogChange: (Boolean) -> Unit,
     showYouTubeQualityDialog: Boolean,
     onShowYouTubeQualityDialogChange: (Boolean) -> Unit,
     showBiliQualityDialog: Boolean,
     onShowBiliQualityDialogChange: (Boolean) -> Unit,
+    showKugouQualityDialog: Boolean,
+    onShowKugouQualityDialogChange: (Boolean) -> Unit,
     showMobileDataNeteaseQualityDialog: Boolean,
     onShowMobileDataNeteaseQualityDialogChange: (Boolean) -> Unit,
     showMobileDataYouTubeQualityDialog: Boolean,
     onShowMobileDataYouTubeQualityDialogChange: (Boolean) -> Unit,
     showMobileDataBiliQualityDialog: Boolean,
     onShowMobileDataBiliQualityDialogChange: (Boolean) -> Unit,
+    showMobileDataKugouQualityDialog: Boolean,
+    onShowMobileDataKugouQualityDialogChange: (Boolean) -> Unit,
     highlightTargetId: String? = null,
     highlightPulse: Int = 0,
     onHighlightFinished: (() -> Unit)? = null
@@ -182,6 +198,18 @@ internal fun SettingsAudioQualitySection(
                 highlightTargetId = highlightTargetId,
                 highlightPulse = highlightPulse,
                 onHighlightFinished = onHighlightFinished
+            )
+
+            AudioQualityListItem(
+                setting = AutoSettingsMetadata.requireSetting(AutoSettingsKeys.KUGOU_AUDIO_QUALITY),
+                valueLabel = kugouQualityLabel,
+                preferredQuality = kugouPreferredQuality,
+                iconRes = CoreCommonR.drawable.ic_kugou,
+                onClick = { onShowKugouQualityDialogChange(true) },
+                highlightTargetId = highlightTargetId,
+                highlightPulse = highlightPulse,
+                onHighlightFinished = onHighlightFinished,
+                applyTint = false
             )
 
             AutoSettingsListItem(
@@ -260,6 +288,20 @@ internal fun SettingsAudioQualitySection(
                     highlightPulse = highlightPulse,
                     onHighlightFinished = onHighlightFinished
                 )
+
+                AudioQualityListItem(
+                    setting = AutoSettingsMetadata.requireSetting(
+                        AutoSettingsKeys.MOBILE_DATA_KUGOU_AUDIO_QUALITY
+                    ),
+                    valueLabel = mobileDataKugouQualityLabel,
+                    preferredQuality = mobileDataKugouAudioQuality,
+                    iconRes = CoreCommonR.drawable.ic_kugou,
+                    onClick = { onShowMobileDataKugouQualityDialogChange(true) },
+                    highlightTargetId = highlightTargetId,
+                    highlightPulse = highlightPulse,
+                    onHighlightFinished = onHighlightFinished,
+                    applyTint = false
+                )
             }
         }
     }
@@ -330,6 +372,24 @@ internal fun SettingsAudioQualitySection(
         )
     }
 
+    if (showKugouQualityDialog) {
+        QualityOptionsDialog(
+            title = stringResource(CoreCommonR.string.quality_kugou_default),
+            selectedValue = kugouPreferredQuality,
+            options = listOf(
+                KUGOU_STANDARD_QUALITY to stringResource(CoreCommonR.string.settings_audio_quality_standard),
+                KUGOU_HIGH_QUALITY to stringResource(CoreCommonR.string.settings_audio_quality_high),
+                KUGOU_LOSSLESS_QUALITY to stringResource(CoreCommonR.string.quality_lossless),
+                KUGOU_HIRES_QUALITY to stringResource(CoreCommonR.string.quality_hires)
+            ),
+            onDismiss = { onShowKugouQualityDialogChange(false) },
+            onSelect = { level ->
+                onKugouQualityChange(level)
+                onShowKugouQualityDialogChange(false)
+            }
+        )
+    }
+
     if (showMobileDataNeteaseQualityDialog) {
         QualityOptionsDialog(
             title = stringResource(CoreCommonR.string.settings_mobile_data_netease_audio_quality),
@@ -396,6 +456,24 @@ internal fun SettingsAudioQualitySection(
         )
     }
 
+    if (showMobileDataKugouQualityDialog) {
+        QualityOptionsDialog(
+            title = stringResource(CoreCommonR.string.settings_mobile_data_kugou_audio_quality),
+            selectedValue = mobileDataKugouAudioQuality,
+            options = listOf(
+                KUGOU_STANDARD_QUALITY to stringResource(CoreCommonR.string.settings_audio_quality_standard),
+                KUGOU_HIGH_QUALITY to stringResource(CoreCommonR.string.settings_audio_quality_high),
+                KUGOU_LOSSLESS_QUALITY to stringResource(CoreCommonR.string.quality_lossless),
+                KUGOU_HIRES_QUALITY to stringResource(CoreCommonR.string.quality_hires)
+            ),
+            onDismiss = { onShowMobileDataKugouQualityDialogChange(false) },
+            onSelect = { level ->
+                onMobileDataKugouAudioQualityChange(level)
+                onShowMobileDataKugouQualityDialogChange(false)
+            }
+        )
+    }
+
     audioQualityNotice?.let { notice ->
         AudioQualityNoticeDialog(
             notice = notice,
@@ -413,7 +491,12 @@ private fun AudioQualityListItem(
     onClick: () -> Unit,
     highlightTargetId: String?,
     highlightPulse: Int,
-    onHighlightFinished: (() -> Unit)?
+    onHighlightFinished: (() -> Unit)?,
+    /**
+     * 单色图标统一跟随主题色；多色品牌图标 (如酷狗的黑底白字 K) 必须传 null,
+     * 否则两层会被染成同色而看不出字形
+     */
+    applyTint: Boolean = true
 ) {
     AutoSettingsListItem(
         setting = setting,
@@ -422,7 +505,11 @@ private fun AudioQualityListItem(
                 painter = painterResource(id = iconRes),
                 contentDescription = stringResource(setting.titleRes),
                 modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
+                tint = if (applyTint) {
+                    MaterialTheme.colorScheme.onSurface
+                } else {
+                    androidx.compose.ui.graphics.Color.Unspecified
+                }
             )
         },
         supportingContent = {

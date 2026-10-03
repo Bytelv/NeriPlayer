@@ -20,6 +20,7 @@ import moe.ouom.neriplayer.data.model.ltw.track.ListenTogetherChannels
 
 internal object PlaybackMediaItemFactory {
     const val BILI_SOURCE_TAG = SongSourceTags.BILIBILI
+    const val KUGOU_SOURCE_TAG = SongSourceTags.KUGOU
 
     fun cacheKey(
         song: SongItem,
@@ -29,13 +30,15 @@ internal object PlaybackMediaItemFactory {
         neteaseFallbackEnabled: () -> Boolean,
         youtubeQuality: () -> String,
         biliQuality: () -> String,
-        neteaseQuality: () -> String
+        neteaseQuality: () -> String,
+        kugouQuality: () -> String
     ): String {
         if (LocalSongSupport.isLocalSong(song, context)) return "local-${song.stableKey().hashCode()}"
         if (isYouTubeSource(song)) {
             return youtubeSongCacheKey(song, youtubeQualityOverride, youtubePreferM4a, youtubeQuality)
         }
         if (isBiliSource(song)) return biliSongCacheKey(song, biliQuality)
+        if (isKugouSource(song)) return kugouSongCacheKey(song, kugouQuality)
         return neteaseCacheKey(song.id, neteaseQuality(), neteaseFallbackEnabled())
     }
 
@@ -66,6 +69,21 @@ internal object PlaybackMediaItemFactory {
         .substringAfter('|', "")
         .substringBefore('|')
         .takeIf { it.isNotBlank() }
+
+    fun isKugouSource(song: SongItem): Boolean =
+        song.channelId == ListenTogetherChannels.KUGOU || song.album.startsWith(KUGOU_SOURCE_TAG)
+
+    /**
+     * 酷狗的播放直链挂在 FileHash 上, 与音质档位无关, 但同一首歌换档位后
+     * 必须换缓存条目, 因此把音质一并编码进 key
+     */
+    private fun kugouSongCacheKey(song: SongItem, quality: () -> String): String =
+        kugouCacheKey(song.audioId ?: song.stableKey(), quality())
+
+    fun kugouCacheKey(hash: String, preferredQuality: String): String {
+        val quality = preferredQuality.trim().lowercase().ifBlank { "320" }
+        return "kugou-$hash-$quality"
+    }
 
     fun neteaseCacheKey(songId: Long, preferredQuality: String, useFallbackNamespace: Boolean): String {
         val quality = preferredQuality.trim().lowercase().ifBlank { "exhigh" }

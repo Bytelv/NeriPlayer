@@ -13,11 +13,13 @@ import moe.ouom.neriplayer.data.model.youtube.playback.YouTubePlayableStreamType
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.platform.netease.api.playback.parser.NeteasePlaybackResponseParser
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.SongSourceTags
 import moe.ouom.neriplayer.data.model.bilibili.playback.BiliAudioStreamInfo
 import moe.ouom.neriplayer.platform.youtube.api.transport.extractYouTubeMusicVideoId
 import moe.ouom.neriplayer.platform.youtube.api.transport.isYouTubeWebRemixDirectMissingPoToken
 import java.io.IOException
 import java.net.URLConnection
+import kotlinx.coroutines.CancellationException
 import kotlin.time.Duration.Companion.milliseconds
 
 internal class DownloadSourceUnavailableException(message: String) : IOException(message)
@@ -37,6 +39,10 @@ internal class RetryableDownloadFailureException(
  */
 internal object AudioDownloadSourceResolver {
     private const val TAG = "NERI-Downloader"
+
+    /** 与 `ListenTogetherChannels.KUGOU` / `SongSourceTags.KUGOU` 保持一致 */
+    private const val KUGOU_CHANNEL_ID = "kugou"
+    private const val KUGOU_SOURCE_TAG = SongSourceTags.KUGOU
 
     internal fun isBiliSource(song: SongItem): Boolean = song.identity().album == "bilibili"
 
@@ -304,6 +310,54 @@ internal object AudioDownloadSourceResolver {
         preferredQuality = preferredQuality,
         avoidDirect = avoidDirect
     )
+
+    /**
+     * 酷狗下载来源解析
+     *
+     * 播放直链与播放器共用同一个仓库, 因此未登录时同样会抛
+     * [KugouApiException.SessionRequired], 这里映射成可重试的下载失败
+     */
+    internal suspend fun resolveKugou(
+        song: SongItem,
+        preferredQuality: String
+    ): AudioDownloadManager.ResolvedDownloadSource? {
+        if (!isKugouSource(song)) {
+            return null
+        }
+        val hash = song.audioId?.trim()?.takeIf { it.isNotBlank() } ?: return null
+        val playUrl = try {
+            DownloadHosts.sources.kugouPlaybackRepository.resolvePlayUrl(
+                hash = hash,
+                albumId = song.playlistContextId,
+                albumAudioId = song.subAudioId,
+                preferredQuality = preferredQuality
+            )
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "酷狗下载直链解析失败: song=${song.name}, hash=$hash, ${error.message.orEmpty()}"
+            )
+            null
+        } ?: return null
+
+        val finalUrl = ensureHttps(playUrl.url)
+        return AudioDownloadManager.ResolvedDownloadSource(
+            url = finalUrl,
+            mimeType = guessMimeFromUrl(finalUrl),
+            fileExtensionHint = playUrl.fileExtension
+                ?.lowercase()
+                ?.takeIf(String::isNotBlank)
+                ?: extFromUrl(finalUrl),
+            contentLength = playUrl.fileSize.takeIf { it > 0L },
+            durationMs = playUrl.durationMs.takeIf { it > 0L }
+        )
+    }
+
+    internal fun isKugouSource(song: SongItem): Boolean =
+        song.channelId.equals(KUGOU_CHANNEL_ID, ignoreCase = true) ||
+            song.album.startsWith(KUGOU_SOURCE_TAG, ignoreCase = true)
 
     internal suspend fun resolveBili(
         song: SongItem,

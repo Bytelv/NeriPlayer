@@ -35,9 +35,16 @@ private object AppPlayerRepositories : PlayerRepositoryDependencies {
     override val biliVideoSkipRepository get() = AppContainer.biliVideoSkipRepository
     override val cloudMusicSearchApi get() = AppContainer.cloudMusicSearchApi
     override val qqMusicSearchApi get() = AppContainer.qqMusicSearchApi
+    override val kugouSessionRepo get() = AppContainer.kugouSessionRepo
+    override val kugouClient get() = AppContainer.kugouClient
+    override val kugouAuthClient get() = AppContainer.kugouAuthClient
+    override val kugouSearchApi get() = AppContainer.kugouSearchApi
+    override val kugouPlaybackRepository get() = AppContainer.kugouPlaybackRepository
+    override val kugouVipRepository get() = AppContainer.kugouVipRepository
     override val lrcLibClient get() = AppContainer.lrcLibClient
     override val amllTtmlClient get() = AppContainer.amllTtmlClient
     override val editableLyricsMatcher get() = AppContainer.editableLyricsMatcher
+    override val kugouPlaybackLyricsResolver get() = AppContainer.kugouPlaybackLyricsResolver
     override val playHistoryRepo get() = AppContainer.playHistoryRepo
     override val playlistUsageRepo get() = AppContainer.playlistUsageRepo
     override val playbackStatsRepo get() = AppContainer.playbackStatsRepo

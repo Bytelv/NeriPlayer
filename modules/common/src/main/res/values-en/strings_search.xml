@@ -16,6 +16,13 @@
     <string name="netease_login_required_search">NetEase is not signed in, search is unavailable</string>
     <string name="netease_login_required_search_placeholder">Sign in to NetEase to search</string>
     <string name="netease_login_required_metadata">NetEase is not signed in, metadata completion is unavailable</string>
+    <string name="kugou_login_required_playback">Sign in to KuGou to play this track, open Settings to sign in</string>
+    <string name="kugou_login_required_search">KuGou backend is not ready, check the server URL in Settings</string>
+    <string name="kugou_add_to_queue">Add to queue</string>
+    <string name="kugou_added_to_queue">Added to queue</string>
+    <string name="kugou_server_error">KuGou backend error: %1$s</string>
+    <string name="error_kugou_search">KuGou search failed: %1$s</string>
+    <string name="explore_kugou_desc">Type a keyword in the search box above to search KuGou Music</string>
     <string name="explore_search_type_song">Songs</string>
     <string name="explore_search_type_playlist">Playlists</string>
     <string name="explore_search_type_artist">Artists</string>

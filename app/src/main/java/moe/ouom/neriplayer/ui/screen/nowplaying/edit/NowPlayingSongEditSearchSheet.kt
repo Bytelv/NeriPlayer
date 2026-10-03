@@ -19,6 +19,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -48,12 +49,14 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import moe.ouom.neriplayer.common.R as CoreCommonR
+import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.ui.component.overlay.DensityScaledModalBottomSheet as ModalBottomSheet
 import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
+import moe.ouom.neriplayer.ui.util.toKugouQueueSong
 import moe.ouom.neriplayer.ui.viewmodel.ManualSearchState
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
 import moe.ouom.neriplayer.util.media.offlineCachedImageRequest
@@ -152,6 +155,7 @@ private fun EditSongSearchAvailabilityMessage(searchEnabled: Boolean) {
 internal fun musicPlatformLabelResource(platform: MusicPlatform): Int = when (platform) {
     MusicPlatform.CLOUD_MUSIC -> CoreCommonR.string.platform_netease_short
     MusicPlatform.QQ_MUSIC -> CoreCommonR.string.settings_qq_music
+    MusicPlatform.KUGOU -> CoreCommonR.string.platform_kugou_short
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -194,7 +198,17 @@ private fun EditSongSearchResults(
                     key = { result -> "${result.source.name}:${result.id}" },
                     contentType = { "search_result" }
                 ) { result ->
-                    EditSongSearchResultCard(result, offlineMode) { onSelect(result) }
+                    EditSongSearchResultCard(
+                        result = result,
+                        offlineMode = offlineMode,
+                        onSelect = { onSelect(result) },
+                        // 酷狗结果可以整首作为新的在线播放来源加入队列
+                        onAddToQueue = if (result.source == MusicPlatform.KUGOU) {
+                            { PlayerManager.addToQueueEnd(result.toKugouQueueSong()) }
+                        } else {
+                            null
+                        }
+                    )
                 }
             }
             else -> Text(
@@ -209,7 +223,8 @@ private fun EditSongSearchResults(
 private fun EditSongSearchResultCard(
     result: SongSearchInfo,
     offlineMode: Boolean,
-    onSelect: () -> Unit
+    onSelect: () -> Unit,
+    onAddToQueue: (() -> Unit)? = null
 ) {
     val context = LocalContext.current
     Card(
@@ -237,6 +252,16 @@ private fun EditSongSearchResultCard(
                     contentDescription = result.songName,
                     modifier = Modifier.size(48.dp).clip(RoundedCornerShape(12.dp))
                 )
+            },
+            trailingContent = onAddToQueue?.let { addToQueue ->
+                {
+                    HapticIconButton(onClick = addToQueue) {
+                        Icon(
+                            imageVector = Icons.Filled.Add,
+                            contentDescription = stringResource(CoreCommonR.string.kugou_add_to_queue)
+                        )
+                    }
+                }
             },
             modifier = Modifier.clickable(onClick = onSelect)
         )

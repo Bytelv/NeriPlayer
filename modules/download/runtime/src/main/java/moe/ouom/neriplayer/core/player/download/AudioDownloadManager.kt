@@ -1726,6 +1726,15 @@ object AudioDownloadManager {
         preferredQuality = preferredQuality
     )
 
+    // 解析酷狗音频直链
+    internal suspend fun resolveKugou(
+        song: SongItem,
+        preferredQuality: String
+    ): ResolvedDownloadSource? = AudioDownloadSourceResolver.resolveKugou(
+        song = song,
+        preferredQuality = preferredQuality
+    )
+
     internal fun ensureHttps(url: String): String = AudioDownloadSourceResolver.ensureHttps(url)
 
     internal fun mimeToExt(mime: String): String? = AudioDownloadSourceResolver.mimeToExt(mime)

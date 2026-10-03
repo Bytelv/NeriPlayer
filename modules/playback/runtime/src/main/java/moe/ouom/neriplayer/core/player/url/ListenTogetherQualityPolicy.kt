@@ -11,16 +11,31 @@ private val NETEASE_SHARE_DEFAULT_GROUPS = listOf(
 
 internal const val MAX_LISTEN_TOGETHER_BILI_STREAM_URL_CANDIDATES = 2
 internal const val MAX_LISTEN_TOGETHER_YOUTUBE_STREAM_URL_CANDIDATES = 1
+internal const val MAX_LISTEN_TOGETHER_KUGOU_STREAM_URL_CANDIDATES = 2
 
 private val BILI_HIGH_FALLBACK_ORDER = listOf("high", "medium", "low")
+
+/** 酷狗的备用直链同样是 mp3/flac 直链, 与网易云一致保留两个候选 */
+private val KUGOU_QUALITY_FALLBACK_ORDER = listOf("hires", "flac", "320", "128")
 
 internal fun maxListenTogetherStreamUrlCandidates(source: PlaybackAudioSource): Int {
     return when (source) {
         PlaybackAudioSource.NETEASE -> MAX_LISTEN_TOGETHER_STREAM_URL_CANDIDATES
         PlaybackAudioSource.BILIBILI -> MAX_LISTEN_TOGETHER_BILI_STREAM_URL_CANDIDATES
         PlaybackAudioSource.YOUTUBE_MUSIC -> MAX_LISTEN_TOGETHER_YOUTUBE_STREAM_URL_CANDIDATES
+        PlaybackAudioSource.KUGOU -> MAX_LISTEN_TOGETHER_KUGOU_STREAM_URL_CANDIDATES
         PlaybackAudioSource.LOCAL -> 0
     }
+}
+
+internal fun buildListenTogetherKugouQualityOrder(
+    preferredQualityKey: String
+): List<String> {
+    val preferred = preferredQualityKey.trim().lowercase().ifBlank { "320" }
+    return buildList {
+        add(preferred)
+        KUGOU_QUALITY_FALLBACK_ORDER.forEach { if (it != preferred) add(it) }
+    }.distinct().take(MAX_LISTEN_TOGETHER_KUGOU_STREAM_URL_CANDIDATES)
 }
 
 internal fun buildListenTogetherNeteaseQualityGroups(

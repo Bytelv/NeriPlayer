@@ -59,6 +59,7 @@
     <string name="quality_netease_default">NetEase Default Quality</string>
     <string name="quality_bili_default">Bilibili Default Quality</string>
     <string name="quality_youtube_default">YouTube Default Quality</string>
+    <string name="quality_kugou_default">KuGou Default Quality</string>
     <string name="device_speaker">Speaker</string>
     <string name="device_wired_headset">Wired</string>
     <string name="device_bluetooth_headset">Bluetooth</string>

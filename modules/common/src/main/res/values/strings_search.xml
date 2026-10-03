@@ -16,6 +16,13 @@
     <string name="netease_login_required_search">网易云未登录，暂不支持搜索</string>
     <string name="netease_login_required_search_placeholder">登录网易云后才能搜索</string>
     <string name="netease_login_required_metadata">网易云未登录，暂不支持补全歌曲信息</string>
+    <string name="kugou_login_required_playback">酷狗需要登录后才能播放，请在设置中登录</string>
+    <string name="kugou_login_required_search">酷狗服务端未就绪，请检查设置中的服务端地址</string>
+    <string name="kugou_add_to_queue">加入播放列表</string>
+    <string name="kugou_added_to_queue">已加入播放列表</string>
+    <string name="kugou_server_error">酷狗服务端返回错误：%1$s</string>
+    <string name="error_kugou_search">酷狗搜索失败：%1$s</string>
+    <string name="explore_kugou_desc">在上方搜索框输入关键词即可搜索酷狗音乐</string>
     <string name="explore_search_type_song">歌曲</string>
     <string name="explore_search_type_playlist">歌单</string>
     <string name="explore_search_type_artist">歌手</string>

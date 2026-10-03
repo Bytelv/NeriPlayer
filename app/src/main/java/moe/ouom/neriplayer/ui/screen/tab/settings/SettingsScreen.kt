@@ -191,9 +191,11 @@ internal fun SettingsScreen(
     var showQualityDialog by remember { mutableStateOf(false) }
     var showYouTubeQualityDialog by remember { mutableStateOf(false) }
     var showBiliQualityDialog by remember { mutableStateOf(false) }
+    var showKugouQualityDialog by remember { mutableStateOf(false) }
     var showMobileDataNeteaseQualityDialog by remember { mutableStateOf(false) }
     var showMobileDataYouTubeQualityDialog by remember { mutableStateOf(false) }
     var showMobileDataBiliQualityDialog by remember { mutableStateOf(false) }
+    var showMobileDataKugouQualityDialog by remember { mutableStateOf(false) }
     var showDefaultStartDestinationDialog by remember { mutableStateOf(false) }
 
     var showColorPickerDialog by remember { mutableStateOf(false) }
@@ -233,9 +235,11 @@ internal fun SettingsScreen(
         neteaseValue = playbackState.defaultAudioQuality.preferredQuality,
         youtubeValue = playbackState.defaultAudioQuality.youtubePreferredQuality,
         biliValue = playbackState.defaultAudioQuality.biliPreferredQuality,
+        kugouValue = playbackState.defaultAudioQuality.kugouPreferredQuality,
         mobileNeteaseValue = playbackState.mobileAudioQuality.mobileDataNeteaseAudioQuality,
         mobileYouTubeValue = playbackState.mobileAudioQuality.mobileDataYouTubeAudioQuality,
-        mobileBiliValue = playbackState.mobileAudioQuality.mobileDataBiliAudioQuality
+        mobileBiliValue = playbackState.mobileAudioQuality.mobileDataBiliAudioQuality,
+        mobileKugouValue = playbackState.mobileAudioQuality.mobileDataKugouAudioQuality
     )
 
     val homeStartPresentation = rememberSettingsHomeStartPresentation(
@@ -910,6 +914,9 @@ internal fun SettingsScreen(
                                     biliQualityLabel = qualityPresentation.biliLabel,
                                     biliPreferredQuality = playbackState.defaultAudioQuality.biliPreferredQuality,
                                     onBiliQualityChange = qualityActions.onBiliQualityChange,
+                                    kugouQualityLabel = qualityPresentation.kugouLabel,
+                                    kugouPreferredQuality = playbackState.defaultAudioQuality.kugouPreferredQuality,
+                                    onKugouQualityChange = qualityActions.onKugouQualityChange,
                                     mobileDataFollowDefaultAudioQuality = playbackState.defaultAudioQuality.mobileDataFollowDefaultAudioQuality,
                                     onMobileDataFollowDefaultAudioQualityChange =
                                         qualityActions.onMobileDataFollowDefaultAudioQualityChange,
@@ -924,6 +931,10 @@ internal fun SettingsScreen(
                                     mobileDataBiliQualityLabel = qualityPresentation.mobileBiliLabel,
                                     mobileDataBiliAudioQuality = qualityPresentation.mobileBiliValue,
                                     onMobileDataBiliAudioQualityChange = qualityActions.onMobileDataBiliAudioQualityChange,
+                                    mobileDataKugouQualityLabel = qualityPresentation.mobileKugouLabel,
+                                    mobileDataKugouAudioQuality = qualityPresentation.mobileKugouValue,
+                                    onMobileDataKugouAudioQualityChange =
+                                        qualityActions.onMobileDataKugouAudioQualityChange,
                                     showQualityDialog = showQualityDialog,
                                     onShowQualityDialogChange = { showQualityDialog = it },
                                     showYouTubeQualityDialog = showYouTubeQualityDialog,
@@ -932,6 +943,8 @@ internal fun SettingsScreen(
                                     },
                                     showBiliQualityDialog = showBiliQualityDialog,
                                     onShowBiliQualityDialogChange = { showBiliQualityDialog = it },
+                                    showKugouQualityDialog = showKugouQualityDialog,
+                                    onShowKugouQualityDialogChange = { showKugouQualityDialog = it },
                                     showMobileDataNeteaseQualityDialog = showMobileDataNeteaseQualityDialog,
                                     onShowMobileDataNeteaseQualityDialogChange = {
                                         showMobileDataNeteaseQualityDialog = it
@@ -943,6 +956,10 @@ internal fun SettingsScreen(
                                     showMobileDataBiliQualityDialog = showMobileDataBiliQualityDialog,
                                     onShowMobileDataBiliQualityDialogChange = {
                                         showMobileDataBiliQualityDialog = it
+                                    },
+                                    showMobileDataKugouQualityDialog = showMobileDataKugouQualityDialog,
+                                    onShowMobileDataKugouQualityDialogChange = {
+                                        showMobileDataKugouQualityDialog = it
                                     },
                                     highlightTargetId = settingsHighlightTargetId,
                                     highlightPulse = settingsHighlightPulse,

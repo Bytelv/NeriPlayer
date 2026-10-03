@@ -3,6 +3,7 @@ package moe.ouom.neriplayer.core.player.quality
 import moe.ouom.neriplayer.core.player.PlayerManager
 import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataBiliAudioQuality
+import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataKugouAudioQuality
 import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataNeteaseAudioQuality
 import moe.ouom.neriplayer.data.settings.playback.normalizeMobileDataYouTubeAudioQuality
 import moe.ouom.neriplayer.data.model.traffic.TrafficNetworkType
@@ -29,6 +30,13 @@ internal fun PlayerManager.effectiveBiliQuality(): String {
     )
 }
 
+internal fun PlayerManager.effectiveKugouQuality(): String {
+    return resolveTrafficAwareQuality(
+        source = PlaybackAudioSource.KUGOU,
+        defaultQuality = kugouPreferredQuality
+    )
+}
+
 private fun PlayerManager.resolveTrafficAwareQuality(
     source: PlaybackAudioSource,
     defaultQuality: String
@@ -51,6 +59,8 @@ private fun PlayerManager.resolveTrafficAwareQuality(
             normalizeMobileDataYouTubeAudioQuality(mobileDataYouTubeAudioQuality)
         PlaybackAudioSource.BILIBILI ->
             normalizeMobileDataBiliAudioQuality(mobileDataBiliAudioQuality)
+        PlaybackAudioSource.KUGOU ->
+            normalizeMobileDataKugouAudioQuality(mobileDataKugouAudioQuality)
         else -> defaultQuality
     }
 }

@@ -32,6 +32,7 @@
     <string name="library_tab_youtube_music">YouTube</string>
     <string name="library_tab_bilibili">哔哩哔哩</string>
     <string name="library_tab_qqmusic">QQ音乐</string>
+    <string name="library_tab_kugou">酷狗</string>
     <string name="library_create_playlist_default">新建歌单</string>
     <string name="library_name_reserved">该名称已保留为\"%s\"，请换一个名称哦~</string>
     <string name="library_name_exists">已存在同名歌单，请换一个名称</string>
@@ -58,6 +59,14 @@
     <string name="library_youtube_music_open_playlist">打开歌单</string>
     <string name="library_youtube_music_copy_browse_id">复制 Browse ID</string>
     <string name="library_youtube_music_copy_playlist_id">复制 Playlist ID</string>
+    <string name="library_kugou_empty">还没有加载到酷狗歌单</string>
+    <string name="library_kugou_hint">确认已登录酷狗音乐后，会加载你创建和收藏的歌单</string>
+    <string name="library_kugou_loading">正在加载酷狗歌单…</string>
+    <string name="library_kugou_load_more">加载更多</string>
+    <string name="library_kugou_liked">我喜欢</string>
+    <string name="library_kugou_created">创建的歌单</string>
+    <string name="library_kugou_collected">收藏的歌单</string>
+    <string name="kugou_playlist_empty">这个歌单还没有歌曲</string>
     <string name="library_favorite_source_format" formatted="false">%d首 · %s</string>
     <string name="library_title">媒体库</string>
     <string name="library_coming_soon">敬请期待</string>

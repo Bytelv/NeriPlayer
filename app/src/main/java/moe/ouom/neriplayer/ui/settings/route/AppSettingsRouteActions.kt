@@ -189,6 +189,8 @@ internal class AppAudioQualitySettingsActions(
 
     val onBiliQualityChange: (String) -> Unit = { scope.launch { repo.setBiliAudioQuality(it) } }
 
+    val onKugouQualityChange: (String) -> Unit = { scope.launch { repo.setKugouAudioQuality(it) } }
+
     val onMobileDataFollowDefaultAudioQualityChange: (Boolean) -> Unit = { enabled ->
             scope.launch {
                 repo.setMobileDataFollowDefaultAudioQuality(enabled)
@@ -210,6 +212,12 @@ internal class AppAudioQualitySettingsActions(
     val onMobileDataBiliAudioQualityChange: (String) -> Unit = { quality ->
             scope.launch {
                 repo.setMobileDataBiliAudioQuality(quality)
+            }
+        }
+
+    val onMobileDataKugouAudioQualityChange: (String) -> Unit = { quality ->
+            scope.launch {
+                repo.setMobileDataKugouAudioQuality(quality)
             }
         }
 }

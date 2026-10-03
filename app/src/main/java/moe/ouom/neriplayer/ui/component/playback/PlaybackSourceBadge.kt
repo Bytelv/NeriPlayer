@@ -47,6 +47,7 @@ enum class PlaybackSourceType {
     NETEASE,
     BILIBILI,
     YOUTUBE_MUSIC,
+    KUGOU,
     LOCAL
 }
 
@@ -103,6 +104,22 @@ fun PlaybackSourceBadge(
                 )
                 Text(
                     text = stringResource(CoreCommonR.string.nowplaying_youtube_music),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurface
+                )
+            }
+
+            PlaybackSourceType.KUGOU -> {
+                // 角标只有 16dp: 用单色 K 并跟随文字色, 与其它三家平台图标一致。
+                // 官方黑底白 K 是双色图标, 在此尺寸下字形会糊, 统一 tint 又会两层同色。
+                Icon(
+                    painter = painterResource(id = CoreCommonR.drawable.ic_kugou_mono),
+                    contentDescription = stringResource(CoreCommonR.string.platform_kugou),
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(16.dp)
+                )
+                Text(
+                    text = stringResource(CoreCommonR.string.platform_kugou_short),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurface
                 )

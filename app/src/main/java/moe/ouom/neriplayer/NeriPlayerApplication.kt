@@ -47,6 +47,7 @@ import moe.ouom.neriplayer.core.startup.app.AppStartupPlanner
 import moe.ouom.neriplayer.core.startup.app.WebViewDataDirectorySuffix
 import moe.ouom.neriplayer.core.startup.app.YouTubeMusicUiGatewayInitializer
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
+import moe.ouom.neriplayer.data.kugou.KugouVipClaimScheduler
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
 import moe.ouom.neriplayer.data.playlist.favorite.FavoritePlaylistRepository
 import moe.ouom.neriplayer.data.settings.playback.readPlaybackPreferenceSnapshotSync
@@ -137,6 +138,35 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
         )
     }
 
+    /**
+     * 给缺少 `t1` 的酷狗会话补一次凭据
+     *
+     * 扫码登录只下发 `token`; 升级前保存的旧会话因此没有 `t1`。这里在启动时补一次
+     * `/login/token`, 免去用户手动重新登录。失败不影响播放, 只是少一个字段。
+     */
+    private suspend fun backfillKugouTokenCredentials() {
+        val current = AppContainer.kugouSessionRepo.currentSession()
+        if (!current.isLoggedIn() || current.t1.isNotBlank() || current.token.isBlank()) {
+            return
+        }
+        val refreshed = runCatching { AppContainer.kugouAuthClient.refreshToken() }
+            .getOrElse { error ->
+                NPLogger.w(
+                    "NeriPlayerApplication",
+                    "酷狗 t1 回填失败: ${error.message.orEmpty()}"
+                )
+                null
+            } ?: return
+        AppContainer.kugouSessionRepo.saveSession(
+            current.copy(
+                t1 = refreshed.t1.ifBlank { current.t1 },
+                token = refreshed.token.ifBlank { current.token },
+                sessionId = refreshed.sessionId.ifBlank { current.sessionId },
+                userId = refreshed.userId.ifBlank { current.userId }
+            )
+        )
+    }
+
     internal fun initializeNormalComponents() {
         if (normalComponentsInitialized) return
         synchronized(this) {
@@ -203,6 +233,16 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
 
             // 长期不开 App 时没有任何前台流程会去续期, 靠这个周期任务把会话保活
             YouTubeAuthRotationWorker.schedulePeriodicRotation(this)
+
+            // 酷狗每日领取概念版 VIP: 进入 App 即触发, 不做交互门控
+            // 领取状态由服务端记录判定, 客户端只负责发一次请求
+            AppContainer.launchBackgroundIo {
+                backfillKugouTokenCredentials()
+                KugouVipClaimScheduler.claimIfPossible(
+                    session = AppContainer.kugouSessionRepo.currentSession(),
+                    repository = AppContainer.kugouVipRepository
+                )
+            }
 
             // 初始化全局下载管理器
             GlobalDownloadManager.initialize(this)

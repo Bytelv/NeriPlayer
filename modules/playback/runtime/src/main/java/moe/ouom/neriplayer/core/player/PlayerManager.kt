@@ -117,6 +117,7 @@ import moe.ouom.neriplayer.core.player.playback.handleTrackEndedIfNeededImpl
 import moe.ouom.neriplayer.core.player.playback.nextImpl
 import moe.ouom.neriplayer.core.player.playback.pauseImpl
 import moe.ouom.neriplayer.core.player.quality.effectiveBiliQuality
+import moe.ouom.neriplayer.core.player.quality.effectiveKugouQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.core.player.runtime.stats.PlaybackStatsOwner
@@ -388,6 +389,9 @@ object PlayerManager {
     internal var biliPreferredQuality: String
         get() = playbackQualityOwner.biliPreferredQuality
         set(value) = playbackQualityOwner.setPreferredQuality(PlaybackAudioSource.BILIBILI, value)
+    internal var kugouPreferredQuality: String
+        get() = playbackQualityOwner.kugouPreferredQuality
+        set(value) = playbackQualityOwner.setPreferredQuality(PlaybackAudioSource.KUGOU, value)
 
     /**
      * 各平台的音质偏好, 供切换弹窗回显
@@ -401,6 +405,7 @@ object PlayerManager {
     internal var mobileDataNeteaseAudioQuality: String = "standard"
     internal var mobileDataYouTubeAudioQuality: String = "low"
     internal var mobileDataBiliAudioQuality: String = "low"
+    internal var mobileDataKugouAudioQuality: String = "128"
     internal var playbackFadeInEnabled = true
     internal var playbackCrossfadeNextEnabled = true
     internal var playbackFadeInDurationMs = DEFAULT_FADE_DURATION_MS
@@ -696,6 +701,7 @@ object PlayerManager {
     val biliClient by lazy { PlayerDependencies.repositories.biliClient }
     val neteaseClient by lazy { PlayerDependencies.repositories.neteaseClient }
     val youtubeMusicPlaybackRepository by lazy { PlayerDependencies.repositories.youtubeMusicPlaybackRepository }
+    val kugouPlaybackRepository by lazy { PlayerDependencies.repositories.kugouPlaybackRepository }
     val youtubeMusicClient by lazy { PlayerDependencies.repositories.youtubeMusicClient }
 
     val cloudMusicSearchApi by lazy { PlayerDependencies.repositories.cloudMusicSearchApi }
@@ -1219,6 +1225,10 @@ object PlayerManager {
     fun isBiliTrack(song: SongItem): Boolean {
         return PlaybackMediaItemFactory.isBiliSource(song)
     }
+
+    fun isKugouTrack(song: SongItem): Boolean {
+        return PlaybackMediaItemFactory.isKugouSource(song)
+    }
     internal fun queueIndexOf(song: SongItem, playlist: List<SongItem> = currentPlaylist): Int {
         return playlist.indexOfFirst { it.sameIdentityAs(song) }
     }
@@ -1500,7 +1510,8 @@ object PlayerManager {
         neteaseFallbackEnabled = { neteaseAutoSourceSwitchEnabled || neteaseLocalSourceFallbackEnabled },
         youtubeQuality = ::effectiveYouTubeQuality,
         biliQuality = ::effectiveBiliQuality,
-        neteaseQuality = ::effectiveNeteaseQuality
+        neteaseQuality = ::effectiveNeteaseQuality,
+        kugouQuality = ::effectiveKugouQuality
     )
 
     internal fun buildNeteasePlaybackCacheKey(

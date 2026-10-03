@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.mapSaver
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.KugouPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 
@@ -48,6 +49,11 @@ private const val KEY_PLAYLIST_ID = "playlistId"
 private const val KEY_BROWSE_ID = "browseId"
 private const val KEY_SUBTITLE = "subtitle"
 private const val KEY_CREATOR_NAME = "creatorName"
+private const val KEY_LIST_ID = "listId"
+private const val KEY_GLOBAL_COLLECTION_ID = "globalCollectionId"
+private const val KEY_INTRO = "intro"
+private const val KEY_IS_DEFAULT_PLAYLIST = "isDefaultPlaylist"
+private const val KEY_IS_COLLECTED = "isCollected"
 
 val playlistSummarySaver: Saver<PlaylistSummary?, Any> = mapSaver(
     save = { playlist ->
@@ -129,6 +135,22 @@ fun restoreBiliPlaylist(map: Map<*, *>?): BiliPlaylist? {
     )
 }
 
+fun restoreKugouPlaylist(map: Map<*, *>?): KugouPlaylist? {
+    if (map.isNullOrEmpty()) return null
+    val name = map[KEY_TITLE] as? String ?: return null
+    return KugouPlaylist(
+        listId = map[KEY_LIST_ID] as? String ?: "",
+        globalCollectionId = map[KEY_GLOBAL_COLLECTION_ID] as? String ?: "",
+        name = name,
+        creatorName = map[KEY_CREATOR_NAME] as? String ?: "",
+        coverUrl = map[KEY_COVER_URL] as? String ?: "",
+        trackCount = (map[KEY_COUNT] as? Number)?.toInt() ?: 0,
+        intro = map[KEY_INTRO] as? String ?: "",
+        isDefaultPlaylist = map[KEY_IS_DEFAULT_PLAYLIST] as? Boolean ?: false,
+        isCollected = map[KEY_IS_COLLECTED] as? Boolean ?: false
+    )
+}
+
 fun restoreYouTubeMusicPlaylist(map: Map<*, *>?): YouTubeMusicPlaylist? {
     if (map.isNullOrEmpty()) return null
     val browseId = map[KEY_BROWSE_ID] as? String ?: return null
@@ -185,4 +207,16 @@ fun YouTubeMusicPlaylist.toSaveMap(): HashMap<String, Any?> = hashMapOf(
     KEY_COVER_URL to coverUrl,
     KEY_SUBTITLE to subtitle,
     KEY_CREATOR_NAME to creatorName
+)
+
+fun KugouPlaylist.toSaveMap(): HashMap<String, Any?> = hashMapOf(
+    KEY_LIST_ID to listId,
+    KEY_GLOBAL_COLLECTION_ID to globalCollectionId,
+    KEY_TITLE to name,
+    KEY_CREATOR_NAME to creatorName,
+    KEY_COVER_URL to coverUrl,
+    KEY_COUNT to trackCount,
+    KEY_INTRO to intro,
+    KEY_IS_DEFAULT_PLAYLIST to isDefaultPlaylist,
+    KEY_IS_COLLECTED to isCollected
 )

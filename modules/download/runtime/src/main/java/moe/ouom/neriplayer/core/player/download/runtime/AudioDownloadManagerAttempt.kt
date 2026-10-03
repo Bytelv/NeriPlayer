@@ -233,6 +233,7 @@ internal suspend fun AudioDownloadManager.runDownloadAttempts(
     downloadAudioQuality: DownloadAudioQualitySelection,
     isYouTubeMusic: Boolean,
     isBili: Boolean,
+    isKugou: Boolean,
     state: DownloadExecutionAttemptState
 ) {
     val songKey = song.stableKey()
@@ -268,6 +269,7 @@ internal suspend fun AudioDownloadManager.runDownloadAttempts(
                 downloadAudioQuality = downloadAudioQuality,
                 isYouTubeMusic = isYouTubeMusic,
                 isBili = isBili,
+                isKugou = isKugou,
                 state = state
             )
             return
@@ -299,6 +301,7 @@ internal suspend fun AudioDownloadManager.executeDownloadAttempt(
     downloadAudioQuality: DownloadAudioQualitySelection,
     isYouTubeMusic: Boolean,
     isBili: Boolean,
+    isKugou: Boolean,
     state: DownloadExecutionAttemptState
 ) {
     val songKey = song.stableKey()
@@ -316,6 +319,7 @@ internal suspend fun AudioDownloadManager.executeDownloadAttempt(
             downloadAudioQuality = downloadAudioQuality,
             isYouTubeMusic = isYouTubeMusic,
             isBili = isBili,
+            isKugou = isKugou,
             state = state
         )
     } finally {
@@ -378,6 +382,7 @@ internal suspend fun AudioDownloadManager.resolveDownloadSourceForAttempt(
     downloadAudioQuality: DownloadAudioQualitySelection,
     isYouTubeMusic: Boolean,
     isBili: Boolean,
+    isKugou: Boolean,
     state: DownloadExecutionAttemptState
 ): ResolvedDownloadSource? {
     return sourceResolveSemaphore.withPermit {
@@ -391,6 +396,10 @@ internal suspend fun AudioDownloadManager.resolveDownloadSourceForAttempt(
             isBili -> resolveBili(
                 song = song,
                 preferredQuality = downloadAudioQuality.biliQuality
+            )
+            isKugou -> resolveKugou(
+                song = song,
+                preferredQuality = downloadAudioQuality.kugouQuality
             )
             else -> resolveNetease(
                 songId = song.id,

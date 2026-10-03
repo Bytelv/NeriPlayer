@@ -92,13 +92,15 @@ internal data class AppDefaultAudioQualitySettingsState(
     val preferredQuality: String,
     val youtubePreferredQuality: String,
     val biliPreferredQuality: String,
+    val kugouPreferredQuality: String,
     val mobileDataFollowDefaultAudioQuality: Boolean
 )
 
 internal data class AppMobileAudioQualitySettingsState(
     val mobileDataNeteaseAudioQuality: String,
     val mobileDataYouTubeAudioQuality: String,
-    val mobileDataBiliAudioQuality: String
+    val mobileDataBiliAudioQuality: String,
+    val mobileDataKugouAudioQuality: String
 )
 
 internal data class AppHomeCardsSettingsState(
@@ -269,18 +271,31 @@ private fun defaultAudioQualitySettingsFlow(repo: SettingsRepository): Flow<AppD
         repo.audioQualityFlow,
         repo.youtubeAudioQualityFlow,
         repo.biliAudioQualityFlow,
+        repo.kugouAudioQualityFlow,
         repo.mobileDataFollowDefaultAudioQualityFlow
-    ) { v0, v1, v2, v3 ->
-        AppDefaultAudioQualitySettingsState(v0, v1, v2, v3)
+    ) { values: Array<Any?> ->
+        AppDefaultAudioQualitySettingsState(
+            preferredQuality = values[0] as String,
+            youtubePreferredQuality = values[1] as String,
+            biliPreferredQuality = values[2] as String,
+            kugouPreferredQuality = values[3] as String,
+            mobileDataFollowDefaultAudioQuality = values[4] as Boolean
+        )
     }
 
 private fun mobileAudioQualitySettingsFlow(repo: SettingsRepository): Flow<AppMobileAudioQualitySettingsState> =
     combine(
         repo.mobileDataNeteaseAudioQualityFlow,
         repo.mobileDataYouTubeAudioQualityFlow,
-        repo.mobileDataBiliAudioQualityFlow
-    ) { v0, v1, v2 ->
-        AppMobileAudioQualitySettingsState(v0, v1, v2)
+        repo.mobileDataBiliAudioQualityFlow,
+        repo.mobileDataKugouAudioQualityFlow
+    ) { v0, v1, v2, v3 ->
+        AppMobileAudioQualitySettingsState(
+            mobileDataNeteaseAudioQuality = v0,
+            mobileDataYouTubeAudioQuality = v1,
+            mobileDataBiliAudioQuality = v2,
+            mobileDataKugouAudioQuality = v3
+        )
     }
 
 private fun homeCardsSettingsFlow(repo: SettingsRepository): Flow<AppHomeCardsSettingsState> =
@@ -415,12 +430,14 @@ internal fun initialAppSettingsRouteState(
             preferredQuality = "exhigh",
             youtubePreferredQuality = "high",
             biliPreferredQuality = "high",
+            kugouPreferredQuality = startupPlaybackPreferences.kugouAudioQuality,
             mobileDataFollowDefaultAudioQuality = startupPlaybackPreferences.mobileDataFollowDefaultAudioQuality
         ),
         mobileAudioQuality = AppMobileAudioQualitySettingsState(
             mobileDataNeteaseAudioQuality = startupPlaybackPreferences.mobileDataNeteaseAudioQuality,
             mobileDataYouTubeAudioQuality = startupPlaybackPreferences.mobileDataYouTubeAudioQuality,
-            mobileDataBiliAudioQuality = startupPlaybackPreferences.mobileDataBiliAudioQuality
+            mobileDataBiliAudioQuality = startupPlaybackPreferences.mobileDataBiliAudioQuality,
+            mobileDataKugouAudioQuality = startupPlaybackPreferences.mobileDataKugouAudioQuality
         ),
         usbExclusivePreferences = UsbExclusivePreferences()
     ),

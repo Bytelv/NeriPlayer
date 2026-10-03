@@ -114,6 +114,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.auth.LoginSuccessDialog
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsYouTubeAuthDialogs
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.kugou.KugouAuthSheet
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
@@ -122,6 +123,8 @@ import moe.ouom.neriplayer.ui.viewmodel.GitHubSyncViewModel
 import moe.ouom.neriplayer.ui.viewmodel.WebDavSyncViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthViewModel
+import moe.ouom.neriplayer.ui.viewmodel.auth.KugouAuthEvent
+import moe.ouom.neriplayer.ui.viewmodel.auth.KugouAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthEvent
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthViewModel
 import moe.ouom.neriplayer.ui.viewmodel.debug.NeteaseAuthEvent
@@ -194,10 +197,12 @@ internal fun shouldShowStartupNotificationPermissionWarning(
 internal fun shouldWarnStartupNoPlatformConnected(
     biliState: SavedCookieAuthState,
     neteaseState: SavedCookieAuthState,
-    youTubeState: YouTubeAuthState
+    youTubeState: YouTubeAuthState,
+    kugouConnected: Boolean = false
 ): Boolean = biliState == SavedCookieAuthState.Missing &&
     neteaseState == SavedCookieAuthState.Missing &&
-    youTubeState == YouTubeAuthState.Missing
+    youTubeState == YouTubeAuthState.Missing &&
+    !kugouConnected
 
 internal fun hasFinishedStartupNotificationPermissionWarning(
     attempts: Int
@@ -384,6 +389,9 @@ fun StartupOnboardingScreen(
     var showYouTubeSheet by remember { mutableStateOf(false) }
     var showYouTubeSavedCookieDialog by remember { mutableStateOf(false) }
     var youTubeSheetTab by rememberSaveable { mutableIntStateOf(0) }
+
+    var showKugouSheet by remember { mutableStateOf(false) }
+    var kugouSheetTab by rememberSaveable { mutableIntStateOf(0) }
     var showGitHubConfigDialog by remember { mutableStateOf(false) }
     var showClearGitHubConfigDialog by remember { mutableStateOf(false) }
     var showWebDavConfigDialog by remember { mutableStateOf(false) }
@@ -405,6 +413,8 @@ fun StartupOnboardingScreen(
     val biliState by biliVm.uiState.collectAsStateWithLifecycle()
     val youTubeVm: YouTubeAuthViewModel = viewModel()
     val youTubeState by youTubeVm.uiState.collectAsStateWithLifecycle()
+    val kugouVm: KugouAuthViewModel = viewModel()
+    val kugouState by kugouVm.uiState.collectAsStateWithLifecycle()
     val githubVm: GitHubSyncViewModel = viewModel()
     val githubState by githubVm.uiState.collectAsStateWithLifecycle()
     val webDavVm: WebDavSyncViewModel = viewModel()
@@ -549,6 +559,26 @@ fun StartupOnboardingScreen(
         }
     }
 
+    LaunchedEffect(kugouVm) {
+        kugouVm.events.collect { event ->
+            when (event) {
+                is KugouAuthEvent.ShowSnack -> inlineMessage = event.message
+                KugouAuthEvent.LoginSuccess -> {
+                    inlineMessage = null
+                    showKugouSheet = false
+                    loginSuccessTitle = composeResources.getString(
+                        CoreCommonR.string.settings_kugou_login_success
+                    )
+                }
+
+                KugouAuthEvent.LogoutSuccess -> {
+                    inlineMessage = null
+                    showKugouSheet = false
+                }
+            }
+        }
+    }
+
     val baseDensity = LocalDensity.current
     val previewDensity = remember(
         baseDensity.fontScale,
@@ -644,7 +674,8 @@ fun StartupOnboardingScreen(
             shouldWarnStartupNoPlatformConnected(
                 biliState = biliState.health.state,
                 neteaseState = neteaseState.health.state,
-                youTubeState = youTubeState.health.state
+                youTubeState = youTubeState.health.state,
+                kugouConnected = kugouState.loggedIn
             )
         ) {
             noPlatformWarningVisible = true
@@ -810,6 +841,16 @@ fun StartupOnboardingScreen(
                     onManageYouTube = {
                         inlineMessage = null
                         showYouTubeSavedCookieDialog = true
+                    },
+                    kugouConnected = kugouState.loggedIn,
+                    kugouDisplayName = kugouState.displayName,
+                    // 已登录时点击不再弹登录面板, 与设置页保持一致
+                    onOpenKugou = {
+                        inlineMessage = null
+                        if (!kugouState.loggedIn) {
+                            kugouSheetTab = 0
+                            showKugouSheet = true
+                        }
                     }
                 )
                 StartupStep.PlaybackSources -> StartupPlaybackSourceContent(
@@ -1198,6 +1239,15 @@ fun StartupOnboardingScreen(
                     youTubeVm.clearAuth()
                 }
             )
+            if (showKugouSheet) {
+                KugouAuthSheet(
+                    vm = kugouVm,
+                    initialTab = kugouSheetTab,
+                    inlineMessage = inlineMessage,
+                    onInlineMessageChange = { inlineMessage = it },
+                    onDismiss = { showKugouSheet = false }
+                )
+            }
             SettingsGitHubDialogs(
                 showGitHubConfigDialog = showGitHubConfigDialog,
                 onShowGitHubConfigDialogChange = { showGitHubConfigDialog = it },
@@ -1319,12 +1369,15 @@ private fun PlatformContent(
     hasSavedNeteaseCookies: Boolean,
     youTubeState: YouTubeAuthState,
     hasSavedYouTubeAuth: Boolean,
+    kugouConnected: Boolean,
+    kugouDisplayName: String,
     onOpenBili: () -> Unit,
     onManageBili: () -> Unit,
     onOpenNetease: () -> Unit,
     onManageNetease: () -> Unit,
     onOpenYouTube: () -> Unit,
-    onManageYouTube: () -> Unit
+    onManageYouTube: () -> Unit,
+    onOpenKugou: () -> Unit
 ) {
     StepHeader(
         icon = Icons.Outlined.Tune,
@@ -1379,6 +1432,25 @@ private fun PlatformContent(
             stringResource(CoreCommonR.string.onboarding_platform_action_connect)
         },
         onClick = if (hasSavedYouTubeAuth) onManageYouTube else onOpenYouTube
+    )
+    Spacer(Modifier.height(12.dp))
+    PlatformCard(
+        // PlatformCard 会统一 tint(见其中的 Icon(tint = colors.onSurface)),
+        // 因此这里必须用单色 K 字形; 官方黑底白 K 的双色图标被染色后两层会同色
+        icon = painterResource(CoreCommonR.drawable.ic_kugou_mono),
+        title = stringResource(CoreCommonR.string.platform_kugou),
+        status = if (kugouConnected) {
+            stringResource(CoreCommonR.string.settings_kugou_status_logged_in, kugouDisplayName)
+        } else {
+            stringResource(CoreCommonR.string.settings_kugou_status_missing)
+        },
+        connected = kugouConnected,
+        actionText = if (kugouConnected) {
+            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
+        } else {
+            stringResource(CoreCommonR.string.onboarding_platform_action_connect)
+        },
+        onClick = onOpenKugou
     )
     Spacer(Modifier.height(18.dp))
     HintCard(body = stringResource(CoreCommonR.string.onboarding_platforms_hint))

@@ -64,6 +64,7 @@ import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteasePlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.KugouPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.library.LibraryTab
 import moe.ouom.neriplayer.ui.screen.tab.library.LibraryScreen
@@ -71,6 +72,7 @@ import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
+import moe.ouom.neriplayer.ui.viewmodel.tab.KugouPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.data.model.SongItem
@@ -91,6 +93,7 @@ import moe.ouom.neriplayer.ui.navigation.shouldSuppressRestoredMainTabHostEntry
 import moe.ouom.neriplayer.ui.util.toSaveMap
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
+import moe.ouom.neriplayer.ui.util.restoreKugouPlaylist
 import moe.ouom.neriplayer.ui.util.restorePlaylistSummary
 import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
 import moe.ouom.neriplayer.util.media.CoverArtColorCache
@@ -118,6 +121,8 @@ sealed class LibrarySelectedItem : Parcelable {
     data class Bili(val playlist: BiliPlaylist) : LibrarySelectedItem()
     @Parcelize
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : LibrarySelectedItem()
+    @Parcelize
+    data class Kugou(val playlist: KugouPlaylist) : LibrarySelectedItem()
 }
 
 private val LibrarySelectedItem?.navigationDepth: Int
@@ -137,7 +142,8 @@ private enum class LibraryScrollSource {
     NeteasePlaylist,
     NeteaseAlbum,
     YouTubeMusic,
-    Bili
+    Bili,
+    Kugou
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -279,6 +285,7 @@ fun LibraryHostScreen(
     val neteaseListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val youtubeMusicListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val biliListSaver: Saver<LazyListState, *> = LazyListState.Saver
+    val kugouListSaver: Saver<LazyListState, *> = LazyListState.Saver
     val qqMusicListSaver: Saver<LazyListState, *> = LazyListState.Saver
 
     val localListState = rememberSaveable(saver = localListSaver) {
@@ -299,6 +306,9 @@ fun LibraryHostScreen(
     val biliListState = rememberSaveable(saver = biliListSaver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
+    val kugouListState = rememberSaveable(saver = kugouListSaver) {
+        LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
+    }
     val qqMusicListState = rememberSaveable(saver = qqMusicListSaver) {
         LazyListState(firstVisibleItemIndex = 0, firstVisibleItemScrollOffset = 0)
     }
@@ -310,6 +320,7 @@ fun LibraryHostScreen(
         LibraryScrollSource.NeteaseAlbum -> neteaseAlbumState
         LibraryScrollSource.YouTubeMusic -> youtubeMusicListState
         LibraryScrollSource.Bili -> biliListState
+        LibraryScrollSource.Kugou -> kugouListState
     }
 
     fun captureLibraryScrollPosition(source: LibraryScrollSource) {
@@ -430,6 +441,7 @@ fun LibraryHostScreen(
                             neteaseListState = neteaseListState,
                             youtubeMusicListState = youtubeMusicListState,
                             biliListState = biliListState,
+                            kugouListState = kugouListState,
                             qqMusicListState = qqMusicListState,
                             topAppBarState = topAppBarState,
                             offlineMode = offlineMode,
@@ -549,6 +561,21 @@ fun LibraryHostScreen(
                                         fid = playlist.fid,
                                         subtype = playlist.kind.name,
                                         subtitle = playlist.subtitle
+                                    )
+                                }
+                            },
+                            onKugouPlaylistClick = { playlist ->
+                                skipDetailCloseAnimation = false
+                                captureLibraryScrollPosition(LibraryScrollSource.Kugou)
+                                openLibrarySelectedItem(LibrarySelectedItem.Kugou(playlist))
+                                AppContainer.launchBackgroundIo {
+                                    AppContainer.playlistUsageRepo.recordOpen(
+                                        id = stableKugouPlaylistUsageId(playlist),
+                                        name = playlist.name,
+                                        picUrl = playlist.coverUrl,
+                                        trackCount = playlist.trackCount,
+                                        source = "kugou",
+                                        subtitle = playlist.creatorName
                                     )
                                 }
                             },
@@ -692,6 +719,15 @@ fun LibraryHostScreen(
                                     offlineMode = offlineMode
                                 )
                         }
+
+                        is LibrarySelectedItem.Kugou -> {
+                            KugouPlaylistDetailScreen(
+                                playlist = current.playlist,
+                                onBack = { selected = null },
+                                onSongClick = onSongClick,
+                                offlineMode = offlineMode
+                            )
+                        }
                         }
                     }
                 }
@@ -743,6 +779,10 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
                 "type" to "ytmusic",
                 "playlist" to item.playlist.toSaveMap()
             )
+            is LibrarySelectedItem.Kugou -> hashMapOf(
+                "type" to "kugou",
+                "playlist" to item.playlist.toSaveMap()
+            )
         }
     },
     restore = { saved ->
@@ -773,6 +813,7 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
             }
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Bili(it) }
             "ytmusic" -> restoreYouTubeMusicPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.YouTubeMusic(it) }
+            "kugou" -> restoreKugouPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Kugou(it) }
             else -> null
         }
     }
@@ -782,4 +823,18 @@ private fun restoreNeteaseArtistSummary(id: Long?, name: String?): NeteaseArtist
     val resolvedId = id?.takeIf { it > 0L } ?: return null
     val resolvedName = name?.takeIf { it.isNotBlank() } ?: return null
     return NeteaseArtistSummary(id = resolvedId, name = resolvedName)
+}
+
+/**
+ * "最近打开的歌单"用的是数字 id, 而酷狗歌单主键是字符串
+ *
+ * 用 global collection id 的稳定散列填充; 真正的身份由歌单 id 本身决定, 这里
+ * 只影响使用记录的排序, 所以散列冲突可接受。
+ */
+private fun stableKugouPlaylistUsageId(playlist: KugouPlaylist): Long {
+    val key = playlist.globalCollectionId.ifBlank {
+        playlist.listId.ifBlank { playlist.name }
+    }
+    val value = key.hashCode().toLong()
+    return if (value < 0L) -value else value
 }

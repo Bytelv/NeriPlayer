@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchFilter
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResult
 import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicSearchResultType
 import moe.ouom.neriplayer.core.di.AppContainer
+import moe.ouom.neriplayer.ui.util.toKugouQueueSong
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.player.PlayerManager.biliClient
 import moe.ouom.neriplayer.core.player.PlayerManager.neteaseClient
@@ -103,6 +104,7 @@ enum class SearchSource {
     YOUTUBE_MUSIC,
     NETEASE,
     BILIBILI,
+    KUGOU,
     LINK_RECOGNITION
 }
 
@@ -324,6 +326,13 @@ private data class ExploreSearchFetchResult(
     val songs: List<SongItem> = searchSongItems(items)
 }
 
+/**
+ * 与 `KugouSearchApi` 内部分页大小保持一致
+ *
+ * 酷狗后端不返回总页数, 只能靠"本页是否取满"推断是否还有下一页
+ */
+private const val KUGOU_SEARCH_PAGE_SIZE = 20
+
 class ExploreViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application
     private val neteaseRepo = AppContainer.neteaseCookieRepo
@@ -469,6 +478,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         when (source) {
             SearchSource.NETEASE -> searchNetease(apiKeyword, matchQuery, requestVersion)
             SearchSource.BILIBILI -> searchBilibili(apiKeyword, matchQuery, requestVersion)
+            SearchSource.KUGOU -> searchKugou(apiKeyword, matchQuery, requestVersion)
             SearchSource.YOUTUBE_MUSIC -> searchYouTubeMusic(apiKeyword, matchQuery, requestVersion)
             SearchSource.LINK_RECOGNITION -> searchRecognizedLink(apiKeyword, requestVersion)
         }
@@ -515,6 +525,11 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                         type = neteaseType
                     )
                     SearchSource.BILIBILI -> fetchBilibiliSearchPage(
+                        keyword = keyword,
+                        matchQuery = matchQuery,
+                        page = nextPage
+                    )
+                    SearchSource.KUGOU -> fetchKugouSearchPage(
                         keyword = keyword,
                         matchQuery = matchQuery,
                         page = nextPage
@@ -603,6 +618,76 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
                 }
             }
         }
+    }
+
+    /** 搜索酷狗音乐 */
+    private fun searchKugou(keyword: String, matchQuery: String, requestVersion: Long) {
+        searchJob = viewModelScope.launch {
+            try {
+                val result = fetchKugouSearchPage(keyword, matchQuery, page = 1)
+                NPLogger.d(
+                    TAG,
+                    "search KuGou success: request=$requestVersion, keyword=$keyword, " +
+                        "count=${result.items.size}, page=${result.page}, hasMore=${result.hasMore}"
+                )
+                updateSearchStateIfCurrent(requestVersion, SearchSource.KUGOU) {
+                    it.copy(
+                        searching = false,
+                        searchError = null,
+                        searchLoadMoreError = null,
+                        searchResults = result.songs,
+                        searchItems = result.items,
+                        searchPage = result.page,
+                        searchHasMore = result.hasMore
+                    )
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                NPLogger.e(
+                    TAG,
+                    "search KuGou failed: request=$requestVersion, keyword=$keyword",
+                    e
+                )
+                updateSearchStateIfCurrent(requestVersion, SearchSource.KUGOU) {
+                    it.copy(
+                        searching = false,
+                        searchError = app.getString(
+                            CoreCommonR.string.error_kugou_search,
+                            e.message ?: app.getString(CoreCommonR.string.github_sync_failed_message)
+                        ),
+                        searchResults = emptyList(),
+                        searchItems = emptyList(),
+                        searchHasMore = false,
+                        searchLoadingMore = false,
+                        searchLoadMoreError = null,
+                        searchPage = 0
+                    )
+                }
+            }
+        }
+    }
+
+    /**
+     * 酷狗后端接口不返回总页数, 以"本页取满"推断还有下一页
+     */
+    private suspend fun fetchKugouSearchPage(
+        keyword: String,
+        matchQuery: String,
+        page: Int
+    ): ExploreSearchFetchResult {
+        val results = withContext(Dispatchers.IO) {
+            AppContainer.kugouSearchApi.search(keyword, page)
+        }
+        val songs = rankExploreSongSearchResults(
+            query = matchQuery,
+            songs = results.map { it.toKugouQueueSong() }
+        )
+        return ExploreSearchFetchResult(
+            items = songs.map { ExploreSearchResult.Song(it) },
+            page = page,
+            hasMore = results.size >= KUGOU_SEARCH_PAGE_SIZE
+        )
     }
 
     private suspend fun fetchBilibiliSearchPage(
@@ -1417,6 +1502,7 @@ class ExploreViewModel(application: Application) : AndroidViewModel(application)
         return when (source) {
             SearchSource.NETEASE -> app.getString(CoreCommonR.string.error_netease_search, fallback)
             SearchSource.BILIBILI -> app.getString(CoreCommonR.string.error_bilibili_search, fallback)
+            SearchSource.KUGOU -> app.getString(CoreCommonR.string.error_kugou_search, fallback)
             SearchSource.YOUTUBE_MUSIC -> app.getString(CoreCommonR.string.error_youtube_search, fallback)
             SearchSource.LINK_RECOGNITION -> app.getString(CoreCommonR.string.error_link_recognition, fallback)
         }

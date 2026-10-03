@@ -524,6 +524,35 @@ internal fun manualSettingsSearchEntries(context: Context): List<SettingsSearchE
             )
         ),
         entry(
+            page = SettingsPage.Accounts,
+            titleRes = CoreCommonR.string.platform_kugou,
+            descriptionRes = CoreCommonR.string.settings_kugou_status_missing,
+            id = "kugou_login",
+            aliases = listOf(
+                "kugou",
+                "ku gou",
+                "kg",
+                "酷狗",
+                "酷狗音乐",
+                "phone",
+                "sms",
+                "captcha",
+                "password",
+                "login",
+                "qr",
+                "vip",
+                "huiyuan",
+                "membership",
+                "base url",
+                "server",
+                "denglu",
+                "zhanghao",
+                "sanfang",
+                "third party",
+                "platform"
+            )
+        ),
+        entry(
             page = SettingsPage.Theme,
             titleRes = CoreCommonR.string.settings_theme_mode,
             descriptionRes = CoreCommonR.string.settings_theme_mode_desc,

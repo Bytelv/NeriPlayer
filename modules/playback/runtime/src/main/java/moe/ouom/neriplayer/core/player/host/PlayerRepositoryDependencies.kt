@@ -2,6 +2,13 @@ package moe.ouom.neriplayer.core.player.host
 
 import moe.ouom.neriplayer.platform.bilibili.api.client.BiliClient
 import moe.ouom.neriplayer.platform.netease.api.client.NeteaseClient
+import moe.ouom.neriplayer.platform.kugou.api.client.KugouAuthClient
+import moe.ouom.neriplayer.platform.kugou.api.client.KugouClient
+import moe.ouom.neriplayer.platform.kugou.api.client.KugouSearchApi
+import moe.ouom.neriplayer.platform.kugou.auth.KugouSessionRepository
+import moe.ouom.neriplayer.platform.kugou.repository.KugouPlaybackRepository
+import moe.ouom.neriplayer.platform.kugou.repository.KugouVipRepository
+import moe.ouom.neriplayer.platform.kugou.lyrics.KugouPlaybackLyricsResolver
 import moe.ouom.neriplayer.platform.search.api.client.CloudMusicSearchApi
 import moe.ouom.neriplayer.platform.youtube.api.client.YouTubeMusicClient
 import moe.ouom.neriplayer.platform.bilibili.auth.BiliCookieRepository
@@ -37,9 +44,16 @@ interface PlayerRepositoryDependencies {
     val biliVideoSkipRepository: BiliVideoSkipRepository
     val cloudMusicSearchApi: CloudMusicSearchApi
     val qqMusicSearchApi: QQMusicLyricsRepository
+    val kugouSessionRepo: KugouSessionRepository
+    val kugouClient: KugouClient
+    val kugouAuthClient: KugouAuthClient
+    val kugouSearchApi: KugouSearchApi
+    val kugouPlaybackRepository: KugouPlaybackRepository
+    val kugouVipRepository: KugouVipRepository
     val lrcLibClient: LrcLibLyricsRepository
     val amllTtmlClient: AmllLyricsRepository
     val editableLyricsMatcher: EditableLyricsMatcher
+    val kugouPlaybackLyricsResolver: KugouPlaybackLyricsResolver
     val playHistoryRepo: PlayHistoryRepository
     val playlistUsageRepo: PlaylistUsageRepository
     val playbackStatsRepo: PlaybackStatsRepository

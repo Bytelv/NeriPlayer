@@ -9,6 +9,7 @@ internal object AndroidDownloadServices : DownloadSourceServices, DownloadLyricS
     override val neteaseClient get() = AppContainer.neteaseClient
     override val biliClient get() = AppContainer.biliClient
     override val biliPlaybackRepository get() = AppContainer.biliPlaybackRepository
+    override val kugouPlaybackRepository get() = AppContainer.kugouPlaybackRepository
     override val youtubeMusicPlaybackRepository get() = AppContainer.youtubeMusicPlaybackRepository
     override val youtubeMusicDownloadPlaybackRepository get() = AppContainer.youtubeMusicDownloadPlaybackRepository
     override val youtubeMusicClient get() = AppContainer.youtubeMusicClient

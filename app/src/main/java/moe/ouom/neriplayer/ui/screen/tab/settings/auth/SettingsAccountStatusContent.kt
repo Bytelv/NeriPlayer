@@ -24,6 +24,7 @@ import moe.ouom.neriplayer.common.R as CoreCommonR
 import moe.ouom.neriplayer.R
 import moe.ouom.neriplayer.data.model.auth.SavedCookieAuthState
 import moe.ouom.neriplayer.data.model.youtube.auth.YouTubeAuthState
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.kugou.KugouSettingsSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.settingsItemClickable
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.collectAsStateWithLifecycleCompat
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
@@ -154,6 +155,7 @@ internal fun SettingsLoginExpandedContent(controller: SettingsAccountAuthControl
             onOpenSheet = controller.actions.openNeteaseSheet
         )
         SettingsQqAccountRow()
+        KugouSettingsSection()
     }
 }
 

@@ -56,6 +56,9 @@ import java.io.IOException
 private const val BILI_DETAIL_BATCH_SIZE = 6
 private const val BILI_RESOURCE_TYPE_COLLECTION = 21
 
+/** 酷狗歌单分页大小, 与仓库默认值一致 */
+private const val KUGOU_PLAYLIST_PAGE_SIZE = 30
+
 /** 媒体库页面 UI 状态 */
 data class LibraryUiState(
     val localPlaylists: List<LocalPlaylist> = emptyList(),
@@ -65,7 +68,14 @@ data class LibraryUiState(
     val youtubeMusicPlaylists: List<YouTubeMusicPlaylist> = emptyList(),
     val youtubeMusicError: String? = null,
     val biliPlaylists: List<BiliPlaylist> = emptyList(),
-    val biliError: String? = null
+    val biliError: String? = null,
+    val kugouPlaylists: List<KugouPlaylist> = emptyList(),
+    val kugouError: String? = null,
+    val kugouLoading: Boolean = false,
+    val kugouLoadingMore: Boolean = false,
+    val kugouHasMore: Boolean = false,
+    /** 酷狗歌单只在登录后可见, 媒体库据此决定是否显示该标签页 */
+    val kugouLoggedIn: Boolean = false
 )
 
 @Suppress("unused")
@@ -79,6 +89,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val biliClient = AppContainer.biliClient
     private val youtubeAuthRepo = AppContainer.youtubeAuthRepo
 
+    private val kugouSessionRepo = AppContainer.kugouSessionRepo
+    private val kugouPlaylistRepo = AppContainer.kugouPlaylistRepository
+
 
     private val _uiState = MutableStateFlow(
         LibraryUiState(localPlaylists = localRepo.playlists.value)
@@ -89,6 +102,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private var youtubeMusicPlaylistsPending = false
     private var youtubeEnabled = YouTubeFeatureGate.isEnabled()
     private var lastObservedYouTubeEnabled: Boolean? = null
+    private var kugouPlaylistsJob: Job? = null
+    private var kugouPage = 1
+    private var lastKugouLoggedIn: Boolean? = null
 
     init {
         // 本地歌单
@@ -171,6 +187,30 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                         biliPlaylists = emptyList(),
                         biliError = null
                     )
+                }
+            }
+        }
+
+        // 酷狗: 只有登录后才有歌单, 登出时清空, 避免残留上一个账号的数据
+        viewModelScope.launch {
+            kugouSessionRepo.sessionFlow.collect { session ->
+                val loggedIn = session.isLoggedIn()
+                val loggedInChanged = loggedIn != lastKugouLoggedIn
+                lastKugouLoggedIn = loggedIn
+                _uiState.value = _uiState.value.copy(kugouLoggedIn = loggedIn)
+                if (!loggedIn) {
+                    kugouPlaylistsJob?.cancel()
+                    kugouPlaylistsJob = null
+                    kugouPage = 1
+                    _uiState.value = _uiState.value.copy(
+                        kugouPlaylists = emptyList(),
+                        kugouError = null,
+                        kugouLoading = false,
+                        kugouLoadingMore = false,
+                        kugouHasMore = false
+                    )
+                } else if (loggedInChanged) {
+                    refreshKugouPlaylists()
                 }
             }
         }
@@ -361,6 +401,90 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                         refreshYouTubeMusicPlaylists()
                     }
                 }
+            }
+        }
+    }
+
+    /**
+     * 拉取酷狗"我的歌单"第一页
+     *
+     * 未登录时仓库会抛 `SessionRequired`, 这里把消息交给界面展示; 标签页本身
+     * 只在登录后出现, 所以这条分支主要用于登录态失效的场景。
+     */
+    fun refreshKugouPlaylists() {
+        if (!_uiState.value.kugouLoggedIn) return
+        kugouPlaylistsJob?.cancel()
+        kugouPage = 1
+        _uiState.value = _uiState.value.copy(
+            kugouLoading = true,
+            kugouLoadingMore = false,
+            kugouError = null
+        )
+        kugouPlaylistsJob = viewModelScope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) {
+                    kugouPlaylistRepo.fetchUserPlaylists(
+                        page = 1,
+                        pageSize = KUGOU_PLAYLIST_PAGE_SIZE
+                    )
+                }
+                kugouPage = 1
+                _uiState.value = _uiState.value.copy(
+                    kugouPlaylists = page.playlists
+                        .filter { it.isPlayable() }
+                        .map { it.toKugouPlaylist() },
+                    kugouHasMore = page.hasMore,
+                    kugouLoading = false,
+                    kugouError = null
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    kugouPlaylists = emptyList(),
+                    kugouHasMore = false,
+                    kugouLoading = false,
+                    kugouError = e.message
+                )
+            }
+        }
+    }
+
+    /** 追加下一页歌单; 正在加载或没有更多时是空操作 */
+    fun loadMoreKugouPlaylists() {
+        val state = _uiState.value
+        if (!state.kugouLoggedIn || state.kugouLoading || state.kugouLoadingMore) return
+        if (!state.kugouHasMore) return
+        val nextPage = kugouPage + 1
+        _uiState.value = state.copy(kugouLoadingMore = true)
+        kugouPlaylistsJob = viewModelScope.launch {
+            try {
+                val page = withContext(Dispatchers.IO) {
+                    kugouPlaylistRepo.fetchUserPlaylists(
+                        page = nextPage,
+                        pageSize = KUGOU_PLAYLIST_PAGE_SIZE
+                    )
+                }
+                kugouPage = nextPage
+                val existing = _uiState.value.kugouPlaylists
+                val appended = page.playlists
+                    .filter { it.isPlayable() }
+                    .map { it.toKugouPlaylist() }
+                _uiState.value = _uiState.value.copy(
+                    kugouPlaylists = (existing + appended).distinctBy {
+                        "${it.globalCollectionId}:${it.listId}"
+                    },
+                    kugouHasMore = page.hasMore,
+                    kugouLoadingMore = false,
+                    kugouError = null
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                _uiState.value = _uiState.value.copy(
+                    kugouLoadingMore = false,
+                    kugouError = e.message
+                )
             }
         }
     }
