@@ -382,9 +382,11 @@ class AddToPlaylistViewModel : ViewModel() {
         val candidate = withContext(Dispatchers.IO) {
             AppContainer.searchManager.findBestCandidateOnPlatform(
                 platform = musicPlatform,
-                songName = song.searchKeyword(),
+                songName = song.name,
                 songArtist = song.artist,
-                songDurationMs = song.durationMs
+                songDurationMs = song.durationMs,
+                // 检索词带歌手: 只按歌名会搜不到原版(同名翻唱占满结果页)
+                searchKeyword = song.searchKeyword()
             )
         }
         return if (candidate == null) {

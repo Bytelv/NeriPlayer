@@ -314,8 +314,33 @@ class AddToPlaylistPlannerTest {
     }
 
     @Test
-    fun `search keyword is the trimmed song name`() {
-        assertEquals("晴天", song(name = "  晴天  ").searchKeyword())
+    fun `search keyword is artist followed by trimmed name`() {
+        assertEquals("测试歌手 晴天", song(name = "  晴天  ").searchKeyword())
+    }
+
+    /**
+     * 检索词必须带歌手
+     *
+     * 真机回归: 只按歌名搜 "SISTERS AND BROTHERS" 时, 结果页被同名翻唱/影视版占满,
+     * 原版(Kanye West / Ye, 166s)挤不进第一页, 导致匹配失败; 带上歌手后第一条即原版。
+     */
+    @Test
+    fun `search keyword includes the artist`() {
+        assertEquals(
+            "Kanye West SISTERS AND BROTHERS",
+            song(name = "SISTERS AND BROTHERS", artist = "Kanye West").searchKeyword()
+        )
+        assertEquals(
+            "周杰伦 晴天",
+            song(name = "  晴天  ", artist = "  周杰伦  ").searchKeyword()
+        )
+    }
+
+    /** 歌手或歌名缺失时不能拼出多余空格, 也不能因此搜不了 */
+    @Test
+    fun `search keyword degrades gracefully when a side is missing`() {
+        assertEquals("晴天", song(name = "晴天", artist = "   ").searchKeyword())
+        assertEquals("周杰伦", song(name = "  ", artist = "周杰伦").searchKeyword())
     }
 
     // ---------------------------------------------------------------- 酷狗写歌单条目

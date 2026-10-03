@@ -308,4 +308,48 @@ class SearchManagerTest {
             )
         )
     }
+
+    /**
+     * 同名不同版本共存时必须选中时长相符的那一个
+     *
+     * 真实数据(酷狗搜 "SISTERS AND BROTHERS"): 结果页同时存在 114s 的影视版、
+     * 164s/218s 的其它翻唱, 以及 166s 的原版。原曲时长 166788ms 只能匹配原版。
+     */
+    @Test
+    fun `same title picks the duration compatible version`() {
+        val result = manager.selectBestSearchCandidate(
+            songName = "SISTERS AND BROTHERS",
+            songArtist = "Kanye West / Ye",
+            songDurationMs = 166_788L,
+            candidates = listOf(
+                candidate(
+                    id = "animation-114",
+                    singer = "The Cast of Sofia the First、Sofia、Sofia",
+                    duration = "1:54",
+                    songName = "Sisters and Brothers"
+                ),
+                candidate(
+                    id = "cover-164",
+                    singer = "Coxai",
+                    duration = "2:44",
+                    songName = "Sisters and Brothers (Explicit)"
+                ),
+                candidate(
+                    id = "cover-218",
+                    singer = "Julia St. Louis、Emilio Foglio",
+                    duration = "3:38",
+                    songName = "Sisters and Brothers"
+                ),
+                candidate(
+                    id = "original-166",
+                    singer = "Ye (侃爷)、Ye",
+                    duration = "2:46",
+                    songName = "SISTERS AND BROTHERS"
+                )
+            )
+        )
+
+        // 只有原版时长落在容差内 (166.8s vs 166s), 其余版本差 50s 以上
+        assertEquals("original-166", result?.id)
+    }
 }

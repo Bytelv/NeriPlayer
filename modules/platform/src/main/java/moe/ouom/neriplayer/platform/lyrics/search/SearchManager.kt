@@ -114,13 +114,17 @@ class SearchManager(private val searchApi: (MusicPlatform) -> SearchApi) {
      * 与 [findBestSearchCandidate] 的另一个区别: 搜索请求本身失败会**抛出异常**,
      * 而不是退化成"没有候选", 这样调用方能区分"匹配不到"和"搜索失败"。
      *
+     * @param searchKeyword 实际发给平台的检索词, 默认就是 [songName]。
+     *   只按歌名检索经常把正确版本挤出结果页 (同名翻唱/动画版会占满前面),
+     *   带上歌手能显著提高命中率; 但**校验仍用 [songName]**, 两者分开传。
      * @return 没有可用候选时返回 null; 时长为 0 或歌名为空时不做任何网络请求
      */
     suspend fun findBestCandidateOnPlatform(
         platform: MusicPlatform,
         songName: String,
         songArtist: String,
-        songDurationMs: Long
+        songDurationMs: Long,
+        searchKeyword: String = songName
     ): SongSearchInfo? = withContext(Dispatchers.IO) {
         if (songName.isBlank() || songDurationMs <= 0L) {
             NPLogger.d(
@@ -130,8 +134,15 @@ class SearchManager(private val searchApi: (MusicPlatform) -> SearchApi) {
             return@withContext null
         }
 
-        val candidates = search(keyword = songName, platform = platform)
-        if (candidates.isEmpty()) return@withContext null
+        val keyword = searchKeyword.trim().ifBlank { songName }
+        val candidates = search(keyword = keyword, platform = platform)
+        if (candidates.isEmpty()) {
+            recordMatchDiagnostics(
+                songName = songName,
+                summary = "搜索无结果: keyword='$keyword', platform=$platform"
+            )
+            return@withContext null
+        }
 
         selectBestSearchCandidate(
             songName = songName,

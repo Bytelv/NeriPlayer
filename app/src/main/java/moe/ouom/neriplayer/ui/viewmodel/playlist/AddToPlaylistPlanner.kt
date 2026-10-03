@@ -116,10 +116,22 @@ fun AddToPlaylistPlatform.toMusicPlatformOrNull(): MusicPlatform? = when (this) 
 /**
  * 目标平台搜索用的关键字
  *
- * 与歌词匹配保持一致: 只拿歌名去搜, 歌手与时长留给打分/校验阶段使用
- * (带上歌手会让很多平台的搜索接口直接搜不到)。
+ * 带歌手。**只按歌名检索经常搜不到正确版本**: 同名翻唱/影视版会把结果页前面占满,
+ * 真正的原版挤不进平台默认返回的第一页(实测酷狗搜 "SISTERS AND BROTHERS" 前 6 条
+ * 全是别人的版本, 而 "Kanye West Sisters and Brothers" 第一条就是原版)。
+ *
+ * 歌手缺失时退回歌名, 不能因为缺歌手就搜不了。
+ * 注意: 这里只影响**检索词**, 歌名校验与写歌单 payload 仍用 [AddToPlaylistSong.name]。
  */
-fun AddToPlaylistSong.searchKeyword(): String = name.trim()
+fun AddToPlaylistSong.searchKeyword(): String {
+    val trimmedName = name.trim()
+    val trimmedArtist = artist.trim()
+    return when {
+        trimmedName.isEmpty() -> trimmedArtist
+        trimmedArtist.isEmpty() -> trimmedName
+        else -> "$trimmedArtist $trimmedName"
+    }
+}
 
 /**
  * 判定"这次点击该直接添加还是先搜索"
