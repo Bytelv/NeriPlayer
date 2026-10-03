@@ -40,7 +40,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -60,8 +59,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.RepeatOne
 import androidx.compose.material.icons.outlined.LibraryMusic
@@ -93,7 +90,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalWindowInfo
-import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
@@ -154,11 +150,11 @@ import moe.ouom.neriplayer.ui.component.playback.scaleIconSize
 import moe.ouom.neriplayer.ui.component.playback.PlaybackSourceType
 import moe.ouom.neriplayer.ui.component.playback.SleepTimerDialog
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
-import moe.ouom.neriplayer.ui.component.sheet.bottomSheetScrollGuard
 import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.theme.LocalNeriTargetColorScheme
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricSeekPosition
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
+import moe.ouom.neriplayer.ui.viewmodel.playlist.AddToPlaylistViewModel
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
@@ -726,6 +722,8 @@ fun NowPlayingScreen(
     val embeddedPhoneticLyrics = loadedLyricsState.embeddedPhoneticLyrics
     val loadedPreferredLyricSource = loadedLyricsState.preferredSource
     val nowPlayingViewModel: NowPlayingViewModel = viewModel()
+    val addToPlaylistViewModel: AddToPlaylistViewModel = viewModel()
+    val addToPlaylistUiState by addToPlaylistViewModel.uiState.collectAsStateWithLifecycle()
     var artistPickerCandidates by remember { mutableStateOf<List<NeteaseArtistSummary>>(emptyList()) }
     var youtubeCreatorPickerCandidates by remember {
         mutableStateOf<List<YouTubeMusicCreatorSummary>>(emptyList())
@@ -1721,47 +1719,44 @@ fun NowPlayingScreen(
                         val selectablePlaylists = remember(playlists, context) {
                             playlists.filterNot { LocalFilesPlaylist.isSystemPlaylist(it, context) }
                         }
-                        ModalBottomSheet(
-                            onDismissRequest = { showAddSheet = false },
-                            sheetState = addSheetState,
-                            sheetGesturesEnabled = false
-                        ) {
-                            LazyColumn(modifier = Modifier.bottomSheetScrollGuard()) {
-                                itemsIndexed(
-                                    items = selectablePlaylists,
-                                    key = { _, pl -> pl.id },
-                                    contentType = { _, _ -> "playlist_option" }
-                                ) { _, pl ->
-                                    Row(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .clickable {
-                                                launchWithLocalSyncWarning(
-                                                    song = currentSong,
-                                                    actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
-                                                ) {
-                                                    PlayerManager.addCurrentToPlaylist(pl.id)
-                                                    showAddSheet = false
-                                                }
-                                            }
-                                            .padding(horizontal = 24.dp, vertical = 16.dp),
-                                        verticalAlignment = Alignment.CenterVertically
-                                    ) {
-                                        Text(pl.name, style = MaterialTheme.typography.bodyLarge)
-                                        Spacer(modifier = Modifier.weight(1f))
-                                        Text(
-                                            pluralStringResource(
-                                                CoreCommonR.plurals.nowplaying_song_count_format,
-                                                pl.songs.size,
-                                                pl.songs.size
-                                            ),
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant
-                                        )
-                                    }
-                                }
-                            }
-                            Spacer(Modifier.height(12.dp))
+                        // 远端歌单懒加载一次 (ViewModel 存活期间不重复打网络)
+                        LaunchedEffect(Unit) {
+                            addToPlaylistViewModel.ensureRemotePlaylists()
                         }
+                        AddToPlaylistSheet(
+                            localPlaylists = selectablePlaylists,
+                            uiState = addToPlaylistUiState,
+                            sheetState = addSheetState,
+                            onDismissRequest = { showAddSheet = false },
+                            onSelectLocalPlaylist = { playlist ->
+                                // 本地歌单保留原有的同步确认逻辑
+                                launchWithLocalSyncWarning(
+                                    song = currentSong,
+                                    actionLabel = composeResources.getString(CoreCommonR.string.playlist_add_to)
+                                ) {
+                                    PlayerManager.addCurrentToPlaylist(playlist.id)
+                                    showAddSheet = false
+                                }
+                            },
+                            onSelectRemoteTarget = { target ->
+                                addToPlaylistViewModel.addCurrentSongToTarget(
+                                    song = currentSong,
+                                    target = target
+                                ) {
+                                    showAddSheet = false
+                                }
+                            },
+                            onRetryRemoteLoad = { addToPlaylistViewModel.refreshRemotePlaylists() }
+                        )
+                    }
+
+                    // 加歌结果反馈 (含"未找到匹配"这类明确失败)
+                    LaunchedEffect(addToPlaylistUiState.feedback) {
+                        val feedback = addToPlaylistUiState.feedback ?: return@LaunchedEffect
+                        addToPlaylistViewModel.consumeFeedback()
+                        snackbarHostState.showNeriSnackbar(
+                            addToPlaylistFeedbackMessage(composeResources, feedback)
+                        )
                     }
 
                     // 睡眠定时器对话框

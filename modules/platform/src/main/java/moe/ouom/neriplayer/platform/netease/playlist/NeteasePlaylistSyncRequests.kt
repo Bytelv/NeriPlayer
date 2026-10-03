@@ -69,7 +69,12 @@ internal fun fetchNeteasePlaylistTrackSnapshot(
     )
 }
 
-internal fun addNeteasePlaylistSongIdsBatch(
+/**
+ * 加歌到网易云歌单 (带 301 重新握手与结果校验)
+ *
+ * 公开给 app 层的"单曲加到远端歌单"复用, 避免在那里重复实现重试逻辑。
+ */
+fun addNeteasePlaylistSongIdsBatch(
     client: NeteaseClient,
     playlistId: Long,
     songIds: List<Long>

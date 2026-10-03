@@ -28,10 +28,48 @@ class ExploreScreenYouTubeGateTest {
         assertEquals(
             listOf(
                 SearchSource.NETEASE,
+                SearchSource.KUGOU,
                 SearchSource.BILIBILI,
                 SearchSource.LINK_RECOGNITION
             ),
             sources
+        )
+    }
+
+    /**
+     * 酷狗音源加入后, 搜索源顺序在国际模式下为
+     * YouTube → 网易云 → 酷狗 → B站 → 链接识别
+     */
+    @Test
+    fun `kugou search source sits between netease and bilibili`() {
+        val international = exploreSearchSourceDisplayOrder(
+            isInternational = true,
+            youtubeEnabled = true
+        )
+        assertEquals(
+            listOf(
+                SearchSource.YOUTUBE_MUSIC,
+                SearchSource.NETEASE,
+                SearchSource.KUGOU,
+                SearchSource.BILIBILI,
+                SearchSource.LINK_RECOGNITION
+            ),
+            international
+        )
+
+        val domestic = exploreSearchSourceDisplayOrder(
+            isInternational = false,
+            youtubeEnabled = true
+        )
+        assertEquals(
+            listOf(
+                SearchSource.NETEASE,
+                SearchSource.KUGOU,
+                SearchSource.BILIBILI,
+                SearchSource.YOUTUBE_MUSIC,
+                SearchSource.LINK_RECOGNITION
+            ),
+            domestic
         )
     }
 

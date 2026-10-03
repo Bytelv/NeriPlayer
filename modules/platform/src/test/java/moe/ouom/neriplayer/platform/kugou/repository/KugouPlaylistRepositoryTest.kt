@@ -22,6 +22,7 @@ package moe.ouom.neriplayer.platform.kugou.repository
  * File: moe.ouom.neriplayer.platform.kugou.repository/KugouPlaylistRepositoryTest
  */
 
+import moe.ouom.neriplayer.data.model.kugou.KugouSong
 import moe.ouom.neriplayer.platform.kugou.api.KugouApiException
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -454,5 +455,110 @@ class KugouPlaylistRepositoryTest {
         // 与搜索结果用同一套稳定身份, 保证跨入口去重一致
         assertEquals("Kugou:DFDED7F8E0D5BBD9AEE65881ADA50F7B", song.sourceStableKey)
         assertTrue(song.id >= 0L)
+    }
+
+    // ---------------------------------------------------------------- 写歌单
+
+    private fun kugouSong(
+        hash: String,
+        title: String
+    ) = KugouSong(
+        id = "1",
+        hash = hash,
+        title = title,
+        artist = "artist"
+    )
+
+    /**
+     * 写歌单的 `data` 契约是 `歌曲名|hash`, 多首逗号分隔
+     *
+     * 文档说明最少需要这两项, 因此绝不能少发或调换顺序。
+     */
+    @Test
+    fun `tracks add payload uses title and hash separated by pipe`() {
+        val payload = KugouPlaylistRepository.buildTracksAddPayloadForTest(
+            listOf(kugouSong("8E10D8825DDE03BCABBDE13E5A4150D2", "我们应该算爱过吧"))
+        )
+
+        assertEquals("我们应该算爱过吧|8E10D8825DDE03BCABBDE13E5A4150D2", payload)
+    }
+
+    @Test
+    fun `tracks add payload joins multiple songs with comma`() {
+        val payload = KugouPlaylistRepository.buildTracksAddPayloadForTest(
+            listOf(
+                kugouSong("AAA", "first"),
+                kugouSong("BBB", "second")
+            )
+        )
+
+        assertEquals("first|AAA,second|BBB", payload)
+    }
+
+    /** 标题里的分隔符会破坏格式, 必须被清洗掉 */
+    @Test
+    fun `tracks add payload strips delimiter characters from title`() {
+        val payload = KugouPlaylistRepository.buildTracksAddPayloadForTest(
+            listOf(kugouSong("AAA", "bad,title|here"))
+        )
+
+        assertEquals("bad title here|AAA", payload)
+    }
+
+    /** 缺 hash 或标题的条目无法构造请求, 应被丢弃而不是发出非法 payload */
+    @Test
+    fun `tracks add payload drops entries without hash or title`() {
+        val payload = KugouPlaylistRepository.buildTracksAddPayloadForTest(
+            listOf(
+                kugouSong("", "no hash"),
+                kugouSong("BBB", "   "),
+                kugouSong("CCC", "valid")
+            )
+        )
+
+        assertEquals("valid|CCC", payload)
+    }
+
+    @Test
+    fun `tracks add payload is empty when nothing usable`() {
+        assertTrue(
+            KugouPlaylistRepository.buildTracksAddPayloadForTest(emptyList()).isEmpty()
+        )
+        assertTrue(
+            KugouPlaylistRepository
+                .buildTracksAddPayloadForTest(listOf(kugouSong("", "")))
+                .isEmpty()
+        )
+    }
+
+    /** 同一首歌重复提交没有意义, 去重后只发一次 */
+    @Test
+    fun `tracks add payload deduplicates identical entries`() {
+        val duplicated = kugouSong("AAA", "same")
+        val payload = KugouPlaylistRepository.buildTracksAddPayloadForTest(
+            listOf(duplicated, duplicated)
+        )
+
+        assertEquals("same|AAA", payload)
+    }
+
+    /**
+     * 跨平台加歌时, 条目的 hash 来自搜索结果 (`SongSearchInfo.id` = FileHash)
+     *
+     * app 层用 `KugouSong(id = hash, hash = hash, title = 歌名)` 构造, 这里锁住
+     * 这种形态依然能产出合法的 `歌曲名|hash`。
+     */
+    @Test
+    fun `tracks add payload accepts a search matched song`() {
+        val matched = KugouSong(
+            id = "8E10D8825DDE03BCABBDE13E5A4150D2",
+            hash = "8E10D8825DDE03BCABBDE13E5A4150D2",
+            title = "我们应该算爱过吧",
+            artist = "郑润泽"
+        )
+
+        val payload = KugouPlaylistRepository.buildTracksAddPayloadForTest(listOf(matched))
+
+        assertEquals("我们应该算爱过吧|8E10D8825DDE03BCABBDE13E5A4150D2", payload)
     }
 }

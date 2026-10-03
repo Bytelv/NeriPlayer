@@ -99,6 +99,43 @@ class SearchManager(private val searchApi: (MusicPlatform) -> SearchApi) {
         candidate
     }
 
+    /**
+     * 只在指定平台内搜索并挑选最佳候选
+     *
+     * [findBestSearchCandidate] 固定查 QQ + 网易云, 那是给"找歌词"用的; 跨平台加歌
+     * 必须拿到**目标平台自己的** id (网易云 songId / 酷狗 FileHash), 所以单独暴露
+     * 一个按平台搜索的入口, 打分与时长校验仍复用同一套 [selectBestSearchCandidate]。
+     *
+     * 与 [findBestSearchCandidate] 的另一个区别: 搜索请求本身失败会**抛出异常**,
+     * 而不是退化成"没有候选", 这样调用方能区分"匹配不到"和"搜索失败"。
+     *
+     * @return 没有可用候选时返回 null; 时长为 0 或歌名为空时不做任何网络请求
+     */
+    suspend fun findBestCandidateOnPlatform(
+        platform: MusicPlatform,
+        songName: String,
+        songArtist: String,
+        songDurationMs: Long
+    ): SongSearchInfo? = withContext(Dispatchers.IO) {
+        if (songName.isBlank() || songDurationMs <= 0L) {
+            NPLogger.d(
+                "SearchManager",
+                "Skipping $platform match without a name/duration: $songName / $songArtist"
+            )
+            return@withContext null
+        }
+
+        val candidates = search(keyword = songName, platform = platform)
+        if (candidates.isEmpty()) return@withContext null
+
+        selectBestSearchCandidate(
+            songName = songName,
+            songArtist = songArtist,
+            songDurationMs = songDurationMs,
+            candidates = candidates
+        )
+    }
+
     internal fun selectBestSearchCandidate(
         songName: String,
         songArtist: String,

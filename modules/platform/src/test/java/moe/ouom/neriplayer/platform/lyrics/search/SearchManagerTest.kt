@@ -123,6 +123,83 @@ class SearchManagerTest {
         }
     }
 
+    // ---- 按目标平台匹配 (跨平台加歌) ----
+
+    /** 跨平台加歌必须只查目标平台: 拿到别的平台 id 会加错歌 */
+    @Test
+    fun `platform match only queries the requested platform`() = runTest {
+        val platforms = mutableListOf<MusicPlatform>()
+        val match = candidate(id = "kugou-hash", duration = "3:00")
+            .copy(source = MusicPlatform.KUGOU)
+        val search = SearchManager { platform ->
+            platforms += platform
+            fakeApi { _, _ -> if (platform == MusicPlatform.KUGOU) listOf(match) else emptyList() }
+        }
+
+        val result = search.findBestCandidateOnPlatform(
+            platform = MusicPlatform.KUGOU,
+            songName = "Signal",
+            songArtist = "Artist One",
+            songDurationMs = 180_000L
+        )
+
+        assertSame(match, result)
+        assertEquals(listOf(MusicPlatform.KUGOU), platforms)
+    }
+
+    @Test
+    fun `platform match returns null when nothing is close enough`() = runTest {
+        val search = SearchManager { fakeApi { _, _ -> listOf(candidate("far", duration = "4:30")) } }
+
+        assertNull(
+            search.findBestCandidateOnPlatform(
+                platform = MusicPlatform.CLOUD_MUSIC,
+                songName = "Signal",
+                songArtist = "Artist One",
+                songDurationMs = 180_000L
+            )
+        )
+    }
+
+    /** 没有时长就没法验证版本, 不该打网络 (调用方据此提示"未找到匹配") */
+    @Test
+    fun `platform match without a duration skips the network`() = runTest {
+        val platforms = mutableListOf<MusicPlatform>()
+        val search = SearchManager { platform ->
+            platforms += platform
+            fakeApi { _, _ -> listOf(candidate("match", duration = "3:00")) }
+        }
+
+        assertNull(
+            search.findBestCandidateOnPlatform(
+                platform = MusicPlatform.CLOUD_MUSIC,
+                songName = "Signal",
+                songArtist = "Artist One",
+                songDurationMs = 0L
+            )
+        )
+        assertEquals(emptyList<MusicPlatform>(), platforms)
+    }
+
+    /** 搜索失败必须抛出, 让调用方区分"搜索失败"与"匹配不到" */
+    @Test
+    fun `platform match propagates search failures`() {
+        val failure = IOException("offline")
+        val search = SearchManager { fakeApi { _, _ -> throw failure } }
+
+        val actual = assertThrows(IOException::class.java) {
+            runTest {
+                search.findBestCandidateOnPlatform(
+                    platform = MusicPlatform.KUGOU,
+                    songName = "Signal",
+                    songArtist = "Artist One",
+                    songDurationMs = 180_000L
+                )
+            }
+        }
+        assertSame(failure, generateSequence<Throwable>(actual) { it.cause }.last())
+    }
+
     private fun fakeApi(search: suspend (String, Int) -> List<SongSearchInfo>): SearchApi =
         object : SearchApi {
             override suspend fun search(keyword: String, page: Int) = search.invoke(keyword, page)

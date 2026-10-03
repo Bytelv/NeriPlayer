@@ -51,4 +51,26 @@
     <string name="youtube_music_playlist_tracks_unavailable">Unable to load the playlist tracks. Please refresh and try again.</string>
     <string name="playlist_load_failed_format">Load failed: %s</string>
     <string name="local_playlist_initialization_failed">Local playlists could not be initialized. Restart the app and try again.</string>
+    <!-- Add to playlist (local / NetEase / Kugou) -->
+    <string name="playlist_add_to_group_local">Local Playlists</string>
+    <string name="playlist_add_to_group_netease">NetEase Playlists</string>
+    <string name="playlist_add_to_group_kugou">Kugou Playlists</string>
+    <string name="playlist_add_to_platform_local">Local</string>
+    <string name="playlist_add_to_platform_netease">NetEase Cloud Music</string>
+    <string name="playlist_add_to_platform_kugou">Kugou</string>
+    <string name="playlist_add_to_remote_loading">Loading playlists…</string>
+    <string name="playlist_add_to_remote_empty">No usable playlist for this account</string>
+    <string name="playlist_add_to_remote_failed_format">Could not load playlists: %s</string>
+    <string name="playlist_add_to_retry">Retry</string>
+    <string name="playlist_add_to_submitting">Matching and adding…</string>
+    <string name="playlist_add_to_success_format">Added to "%s"</string>
+    <string name="playlist_add_to_failed_format">Could not add: %s</string>
+    <string name="playlist_add_to_failed_generic">Could not add, please try again later</string>
+    <string name="playlist_add_to_no_match_format">No matching song found on %1$s, nothing was added</string>
+    <string name="playlist_add_to_search_failed_format" formatted="false">Search on %1$s failed: %2$s</string>
+    <string name="playlist_add_to_target_unavailable_format">The %1$s playlist is unavailable, nothing was added</string>
+    <string name="playlist_add_to_reason_song_unavailable">No song is currently playing</string>
+    <string name="playlist_add_to_reason_invalid_netease_id">This song has no usable NetEase song ID</string>
+    <string name="playlist_add_to_reason_missing_kugou_hash">This song has no usable Kugou FileHash</string>
+    <string name="playlist_add_to_reason_unsupported_platform">This platform does not support adding to playlists</string>
 </resources>

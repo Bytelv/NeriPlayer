@@ -183,6 +183,78 @@ class KugouPlaylistRepository(private val client: KugouClient) {
             }
         }
 
+    /**
+     * 把歌曲加入酷狗歌单
+     *
+     * 契约 (文档「对歌单添加歌曲」): **POST** `/playlist/tracks/add`, 必选
+     * `listid` 与 `data`; `data` 每首为 `歌曲名|hash|专辑id|mixsongid`,
+     * 多首以逗号分隔, 最少需要 歌曲名 + hash。
+     *
+     * 因此 [KugouSong] 至少要带上 hash 与非空标题, 否则无法构造请求。
+     *
+     * @return 成功的首数; 无可用条目或失败返回 0
+     */
+    suspend fun addSongsToPlaylist(
+        listId: String,
+        songs: List<KugouSong>
+    ): Int = withContext(Dispatchers.IO) {
+        val normalizedListId = listId.trim()
+        if (normalizedListId.isEmpty()) return@withContext 0
+
+        val payload = buildTracksAddPayload(songs)
+        if (payload.isEmpty()) {
+            NPLogger.w(TAG, "酷狗加歌到歌单: 无可用的 hash/标题, 已跳过")
+            return@withContext 0
+        }
+
+        try {
+            val json = client.postJson(
+                path = TRACKS_ADD_PATH,
+                query = mapOf("listid" to normalizedListId, "data" to payload)
+            )
+            if (json == null) {
+                NPLogger.w(TAG, "酷狗加歌到歌单: 服务端返回空响应, listid=$normalizedListId")
+                return@withContext 0
+            }
+            val status = json.optInt("status")
+            if (status != 1) {
+                val errorCode = json.optInt("error_code").takeIf { it != 0 }
+                    ?: json.optInt("errcode").takeIf { it != 0 }
+                if (errorCode in KugouClient.SESSION_REQUIRED_ERROR_CODES) {
+                    throw KugouApiException.SessionRequired(SESSION_REQUIRED_MESSAGE)
+                }
+                NPLogger.w(
+                    TAG,
+                    "酷狗加歌到歌单失败: listid=$normalizedListId, errorCode=$errorCode, status=$status"
+                )
+                return@withContext 0
+            }
+            songs.count { it.hash.isNotBlank() && it.title.isNotBlank() }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: KugouApiException.SessionRequired) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(TAG, "酷狗加歌到歌单异常: listid=$normalizedListId, ${error.message.orEmpty()}")
+            0
+        }
+    }
+
+    /**
+     * 构造 `data` 参数
+     *
+     * 只发 歌曲名 + hash: 文档说明这两个是最少必需项, 且调用例子确认可用;
+     * 专辑 id / mixsongid 属于"返回错误时才需要"的补充项。
+     */
+    internal fun buildTracksAddPayload(songs: List<KugouSong>): String =
+        songs.mapNotNull { song ->
+            val title = song.title.trim()
+            val hash = song.hash.trim()
+            if (title.isEmpty() || hash.isEmpty()) return@mapNotNull null
+            // 逗号与竖线是字段分隔符, 标题里的同名符号会破坏格式, 统一替换掉
+            "${title.replace(',', ' ').replace('|', ' ')}|$hash"
+        }.distinct().joinToString(",")
+
     private fun trackQuery(
         idKey: String,
         idValue: String,
@@ -339,6 +411,9 @@ class KugouPlaylistRepository(private val client: KugouClient) {
         private const val TRACK_ALL_NEW_PATH = "/playlist/track/all/new"
         private const val PLAYLIST_DETAIL_PATH = "/playlist/detail"
 
+        /** 写接口, 必须 POST (GET 会得到 405) */
+        private const val TRACKS_ADD_PATH = "/playlist/tracks/add"
+
         internal const val SESSION_REQUIRED_MESSAGE = "酷狗未登录, 无法获取歌单"
 
         /** KA Music 的 `userPlaylists` 默认每页 30 */
@@ -366,6 +441,9 @@ class KugouPlaylistRepository(private val client: KugouClient) {
 
         internal fun shouldFallbackToUserTrackEndpointForTest(error: KugouApiException): Boolean =
             KugouPlaylistRepository(UNUSED_CLIENT).shouldFallbackToUserTrackEndpoint(error)
+
+        internal fun buildTracksAddPayloadForTest(songs: List<KugouSong>): String =
+            KugouPlaylistRepository(UNUSED_CLIENT).buildTracksAddPayload(songs)
 
         /** 解析函数不会触碰网络, 占位实例的创建延迟到真正调用时 */
         private val UNUSED_CLIENT: KugouClient by lazy {

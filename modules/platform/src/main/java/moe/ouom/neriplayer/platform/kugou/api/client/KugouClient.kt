@@ -36,6 +36,8 @@ import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.RequestBody
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 /**
@@ -88,9 +90,45 @@ class KugouClient(
     suspend fun getRaw(
         path: String,
         query: Map<String, String?> = emptyMap()
+    ): String = executeRaw(path = path, query = query, method = "GET")
+
+    /**
+     * 需要 POST 的写接口 (例如 `/playlist/tracks/add`)
+     *
+     * 该后端对写接口返回 405 Method Not Allowed, 必须用 POST; 参数仍走查询串,
+     * 与文档的调用例子一致, 因此这里带一个空 body。
+     */
+    suspend fun postRaw(
+        path: String,
+        query: Map<String, String?> = emptyMap()
+    ): String = executeRaw(
+        path = path,
+        query = query,
+        method = "POST",
+        body = EMPTY_BODY
+    )
+
+    suspend fun postJson(
+        path: String,
+        query: Map<String, String?> = emptyMap()
+    ): JSONObject? {
+        val raw = postRaw(path, query).trim()
+        if (raw.isEmpty()) return null
+        return try {
+            JSONObject(raw)
+        } catch (error: Exception) {
+            throw KugouApiException.ServerError("酷狗响应不是合法 JSON: path=$path", error)
+        }
+    }
+
+    private suspend fun executeRaw(
+        path: String,
+        query: Map<String, String?>,
+        method: String,
+        body: RequestBody? = null
     ): String = withContext(Dispatchers.IO) {
-        val request = buildRequest(path, query)
-        val (code, body) = try {
+        val request = buildRequest(path = path, query = query, method = method, body = body)
+        val (code, responseBody) = try {
             okHttpClient.newCall(request).awaitResponse { response ->
                 captureRotatedSession(response.header(KugouEndpointConfig.SESSION_ID_HEADER))
                 response.code to response.body.string()
@@ -105,25 +143,26 @@ class KugouClient(
         }
 
         if (debugLogging) {
-            NPLogger.d(TAG, "kugou response: path=$path, code=$code, length=${body.length}")
+            NPLogger.d(TAG, "kugou response: $method $path, code=$code, length=${responseBody.length}")
         }
 
         // 诊断缓冲: 设备上不便取 logcat, 这里保留一次脱敏后的交换记录
         KugouDebugLog.record(
-            label = "HTTP $code $path",
+            label = "HTTP $code $method $path",
             detail = buildString {
                 append("query=").append(maskQuery(query))
-                if (body.isNotBlank()) {
-                    append(" | body=").append(KugouDebugLog.maskSensitive(body).take(BODY_LOG_LIMIT))
+                if (responseBody.isNotBlank()) {
+                    append(" | body=")
+                        .append(KugouDebugLog.maskSensitive(responseBody).take(BODY_LOG_LIMIT))
                 }
             }
         )
 
         if (code !in 200..299) {
-            throw translateHttpFailure(path = path, code = code, body = body)
+            throw translateHttpFailure(path = path, code = code, body = responseBody)
         }
         // 204 / 空体是该后端的合法应答 (例如未登录时的领取接口), 交给 codec 判定
-        body
+        responseBody
     }
 
     /** 查询串里 hash 等非敏感值保留, 便于核对请求参数 */
@@ -150,7 +189,12 @@ class KugouClient(
         }
     }
 
-    private fun buildRequest(path: String, query: Map<String, String?>): Request {
+    private fun buildRequest(
+        path: String,
+        query: Map<String, String?>,
+        method: String = "GET",
+        body: RequestBody? = null
+    ): Request {
         val base = KugouEndpointConfig.normalizeBaseUrl(baseUrlProvider())
         val url = buildUrl(base, path, query)
             ?: throw KugouApiException.BadRequest("酷狗服务端地址无效: $base")
@@ -158,7 +202,7 @@ class KugouClient(
         val session = sessionProvider.currentSession()
         // 只记录字段是否存在, 不记录值: 用于判断凭据是否齐全导致的鉴权失败
         KugouDebugLog.record(
-            label = "REQ $path",
+            label = "REQ $method $path",
             detail = "hasSessionId=${session.sessionId.isNotBlank()}, " +
                 "hasToken=${session.token.isNotBlank()}, " +
                 "hasT1=${session.t1.isNotBlank()}, " +
@@ -176,6 +220,7 @@ class KugouClient(
                     header(KugouEndpointConfig.T1_HEADER, session.t1)
                 }
             }
+            .method(method, body)
             .build()
     }
 
@@ -233,6 +278,9 @@ class KugouClient(
         private const val TAG = "KugouClient"
         private const val BODY_LOG_LIMIT = 600
         private const val USER_AGENT = "NeriPlayer/1.0 (https://github.com/cwuom/NeriPlayer)"
+
+        /** 写接口把参数放在查询串, body 留空 */
+        private val EMPTY_BODY: RequestBody = ByteArray(0).toRequestBody(null)
 
         /**
          * 表示"缺少有效会话"的错误码
