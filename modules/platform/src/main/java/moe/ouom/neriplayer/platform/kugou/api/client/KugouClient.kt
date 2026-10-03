@@ -34,6 +34,7 @@ import moe.ouom.neriplayer.platform.kugou.api.KugouApiException
 import moe.ouom.neriplayer.platform.kugou.api.KugouEndpointConfig
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
@@ -93,26 +94,28 @@ class KugouClient(
     ): String = executeRaw(path = path, query = query, method = "GET")
 
     /**
-     * 需要 POST 的写接口 (例如 `/playlist/tracks/add`)
+     * 写接口: `POST` + JSON body
      *
-     * 该后端对写接口返回 405 Method Not Allowed, 必须用 POST; 参数仍走查询串,
-     * 与文档的调用例子一致, 因此这里带一个空 body。
+     * 实测该后端的写接口与文档不一致, 必须满足三点, 否则拿不到业务响应:
+     * - 用 **POST**(GET 得到 405 Method Not Allowed)
+     * - 带 `Content-Type: application/json`(缺失直接 415 Unsupported Media Type)
+     * - body **非空**(空 body 会回 "A non-empty request body is required.")
+     *
+     * 仅仅把参数放进查询串是不够的: 后端只认 body 里的字段
+     * (查询串版本会回 "ListId 不能为空")。
      */
-    suspend fun postRaw(
+    suspend fun postJsonBody(
         path: String,
-        query: Map<String, String?> = emptyMap()
-    ): String = executeRaw(
-        path = path,
-        query = query,
-        method = "POST",
-        body = EMPTY_BODY
-    )
-
-    suspend fun postJson(
-        path: String,
+        body: JSONObject,
         query: Map<String, String?> = emptyMap()
     ): JSONObject? {
-        val raw = postRaw(path, query).trim()
+        val payload = body.toString()
+        val raw = executeRaw(
+            path = path,
+            query = query,
+            method = "POST",
+            body = payload.toRequestBody(JSON_MEDIA_TYPE)
+        ).trim()
         if (raw.isEmpty()) return null
         return try {
             JSONObject(raw)
@@ -279,8 +282,8 @@ class KugouClient(
         private const val BODY_LOG_LIMIT = 600
         private const val USER_AGENT = "NeriPlayer/1.0 (https://github.com/cwuom/NeriPlayer)"
 
-        /** 写接口把参数放在查询串, body 留空 */
-        private val EMPTY_BODY: RequestBody = ByteArray(0).toRequestBody(null)
+        /** 写接口缺它会被直接拒绝(415 Unsupported Media Type) */
+        private val JSON_MEDIA_TYPE = "application/json".toMediaType()
 
         /**
          * 表示"缺少有效会话"的错误码
