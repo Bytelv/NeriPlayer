@@ -89,6 +89,32 @@ class PlayerManagerNeteaseAutoKugouSourceTest {
         assertTrue("score=$score 不应达到接受阈值", score < 70)
     }
 
+    // ------------------------------------------------------------ 时长闸门
+
+    /**
+     * 时长明显不符时即使标题/歌手都对也必须拒绝
+     *
+     * 打分在时长差 >45s 时给 0 分, 但"标题 55 + 歌手 25 = 80" 已超过 70 阈值,
+     * 因此必须靠这道闸门挡住同名不同版本(live/remix/翻唱)。
+     */
+    @Test
+    fun durationGate_rejectsClearlyDifferentLength() {
+        // 原版 166.8s vs 影视版 114s: 差 52.8s
+        assertFalse(isKugouAutoSourceDurationAcceptable(166_788L, 114_000L))
+        assertTrue(isKugouAutoSourceDurationAcceptable(166_788L, 166_000L))
+        // 边界: 恰好 45s 放行, 超过则拒
+        assertTrue(isKugouAutoSourceDurationAcceptable(180_000L, 225_000L))
+        assertFalse(isKugouAutoSourceDurationAcceptable(180_000L, 225_001L))
+    }
+
+    /** 任一时长未知时不能拦, 否则缺元数据的正确歌曲会被误拒 */
+    @Test
+    fun durationGate_allowsUnknownDuration() {
+        assertTrue(isKugouAutoSourceDurationAcceptable(0L, 114_000L))
+        assertTrue(isKugouAutoSourceDurationAcceptable(166_788L, 0L))
+        assertTrue(isKugouAutoSourceDurationAcceptable(0L, 0L))
+    }
+
     // ------------------------------------------------------------ 缓存键
 
     @Test

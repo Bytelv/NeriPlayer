@@ -42,6 +42,18 @@ private const val NETEASE_AUTO_KUGOU_SEARCH_LIMIT = 6
 /** 低于这个分数认为不是同一首歌, 宁可放弃也不要放错版本 */
 private const val NETEASE_AUTO_KUGOU_MIN_ACCEPT_SCORE = 70
 
+/**
+ * 时长容差
+ *
+ * 打分函数在时长差超过 45 秒时给 0 分, 而"标题相同(55) + 歌手命中(25) = 80"
+ * 已经超过接受阈值 —— 也就是说**光看分数, 时长完全不匹配的候选也会被接受**。
+ *
+ * 酷狗是版权曲库, 同名歌曲往往同时存在原版/live/remix/翻唱, 放到耳朵里会很突兀,
+ * 因此这里额外加一道硬闸门: 双方时长都已知且差距超过该值时直接不接受。
+ * 任一时长未知则不拦(避免因为缺元数据而误伤正确的歌)。
+ */
+private const val NETEASE_AUTO_KUGOU_MAX_DURATION_DELTA_MS = 45_000L
+
 /** 除主链外最多预置几个备用候选 */
 private const val NETEASE_AUTO_KUGOU_FALLBACK_LIMIT = 2
 
@@ -99,10 +111,20 @@ internal suspend fun PlayerManager.tryResolveNeteaseAutoKugouSource(
                 continue
             }
 
+            val candidateDurationMs = parseKugouAutoSourceDurationMs(candidate.duration)
+            if (!isKugouAutoSourceDurationAcceptable(song.durationMs, candidateDurationMs)) {
+                NPLogger.w(
+                    "NERI-PlayerManager",
+                    "Skip Kugou auto source with mismatched duration: song=${song.name}, " +
+                        "hash=$hash, expected=${song.durationMs}ms, actual=${candidateDurationMs}ms"
+                )
+                continue
+            }
+
             val result = resolveKugouAutoSourceCandidate(
                 song = song,
                 hash = hash,
-                candidateDurationMs = parseKugouAutoSourceDurationMs(candidate.duration),
+                candidateDurationMs = candidateDurationMs,
                 preferredQuality = preferredQuality,
                 sideEffects = sideEffects
             ) ?: continue
@@ -257,6 +279,20 @@ private suspend fun PlayerManager.resolveKugouAutoSourceCandidate(
             qualityKey = playUrl.quality
         )
     )
+}
+
+/**
+ * 时长闸门
+ *
+ * 任一方时长未知(<=0)时放行: 缺元数据不应该让正确的歌被拒。
+ */
+internal fun isKugouAutoSourceDurationAcceptable(
+    expectedDurationMs: Long,
+    candidateDurationMs: Long
+): Boolean {
+    if (expectedDurationMs <= 0L || candidateDurationMs <= 0L) return true
+    return kotlin.math.abs(candidateDurationMs - expectedDurationMs) <=
+        NETEASE_AUTO_KUGOU_MAX_DURATION_DELTA_MS
 }
 
 internal fun buildNeteaseAutoKugouCacheKey(hash: String, qualityKey: String?): String {
