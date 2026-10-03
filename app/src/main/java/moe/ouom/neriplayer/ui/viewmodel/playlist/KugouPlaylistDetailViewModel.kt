@@ -37,6 +37,7 @@ import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.SongSourceTags
 import moe.ouom.neriplayer.data.model.kugou.KugouPlaylistSummary
+import moe.ouom.neriplayer.data.model.kugou.KugouDebugLog
 import moe.ouom.neriplayer.data.model.kugou.KugouSong
 import moe.ouom.neriplayer.platform.kugou.repository.toKugouQueueSong
 import moe.ouom.neriplayer.ui.viewmodel.tab.KugouPlaylist
@@ -148,16 +149,27 @@ class KugouPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                 loadedPage = page
                 val mapped = songPage.songs.map { it.toKugouQueueSong() }
                 val previous = _uiState.value
+                val merged = mergePlaylist(
+                    base = previous.playlist ?: playlist,
+                    detail = detail,
+                    pageCoverUrl = songPage.coverUrl,
+                    firstSongCoverUrl = songPage.songs.firstOrNull()?.coverUrl
+                )
+                // 封面不显示时, 这一行能直接说明是"服务端没给"还是"我们没取到"
+                KugouDebugLog.record(
+                    label = "COVER kugou playlist",
+                    detail = "歌单pic=${detail?.coverUrl.orEmpty().ifBlank { "<无>" }} | " +
+                        "列表传入=${(previous.playlist ?: playlist).coverUrl.ifBlank { "<无>" }} | " +
+                        "list_info=${songPage.coverUrl.orEmpty().ifBlank { "<无>" }} | " +
+                        "首曲=${songPage.songs.firstOrNull()?.coverUrl.orEmpty().ifBlank { "<无>" }} " +
+                        "| 采用=${merged.coverUrl.ifBlank { "<空, 将显示占位图>" }} " +
+                        "| 曲目数=${songPage.songs.size}"
+                )
                 _uiState.value = previous.copy(
                     loading = false,
                     loadingMore = false,
                     error = null,
-                    playlist = mergePlaylist(
-                        base = previous.playlist ?: playlist,
-                        detail = detail,
-                        pageCoverUrl = songPage.coverUrl,
-                        firstSongCoverUrl = songPage.songs.firstOrNull()?.coverUrl
-                    ),
+                    playlist = merged,
                     songs = if (reset) {
                         mapped
                     } else {

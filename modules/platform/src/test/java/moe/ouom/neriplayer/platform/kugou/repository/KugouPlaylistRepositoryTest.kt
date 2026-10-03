@@ -375,8 +375,9 @@ class KugouPlaylistRepositoryTest {
         assertEquals("「0.8x」慢速歌曲", detail?.name)
         assertEquals(47, detail?.trackCount)
         assertEquals("ntan", detail?.creatorName)
+        // {size} 占位符必须被替换成真实尺寸, 否则图片库拿到非法 URL 会加载失败
         assertEquals(
-            "https://c1.kgimg.com/custom/{size}/20221223/20221223101844795550.jpg",
+            "https://c1.kgimg.com/custom/400/20221223/20221223101844795550.jpg",
             detail?.coverUrl
         )
     }
@@ -688,9 +689,9 @@ class KugouPlaylistRepositoryTest {
 
         val page = KugouPlaylistRepository.parsePlaylistSongPageForTest(json)
 
-        // http 必须升级为 https, 否则部分机型直接拒绝明文流量
+        // http 升级为 https, 且 {size} 替换为真实尺寸
         assertEquals(
-            "https://c1.kgimg.com/custom/{size}/20221223/20221223101844795550.jpg",
+            "https://c1.kgimg.com/custom/400/20221223/20221223101844795550.jpg",
             page.coverUrl
         )
     }

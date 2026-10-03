@@ -198,14 +198,35 @@ private fun resolveKugouDurationMs(item: JSONObject): Long {
 /**
  * 酷狗封面走 http 的 imge.kugou.com, 统一升级到 https 避免明文流量被拦
  */
+/**
+ * 图片地址标准化
+ *
+ * 酷狗的歌单封面模板里带 `{size}` **字面占位符**, 例如
+ * `http://c1.kgimg.com/custom/{size}/20221223/xxx.jpg`。它必须被替换成真实尺寸:
+ * 直接把带花括号的地址交给图片库是不可靠的(花括号在 URL 里非法), 会导致封面
+ * 加载失败而只显示占位图。这里统一替换成 [KUGOU_IMAGE_SIZE_PX]。
+ */
+internal const val KUGOU_IMAGE_SIZE_PX = 400
+
+private const val KUGOU_IMAGE_SIZE_PLACEHOLDER = "{size}"
+
 internal fun normalizeKugouImageUrl(raw: String?): String? {
     val value = raw?.trim()?.takeIf { it.isNotBlank() } ?: return null
+    val withSize = if (value.contains(KUGOU_IMAGE_SIZE_PLACEHOLDER, ignoreCase = true)) {
+        value.replace(
+            KUGOU_IMAGE_SIZE_PLACEHOLDER,
+            KUGOU_IMAGE_SIZE_PX.toString(),
+            ignoreCase = true
+        )
+    } else {
+        value
+    }
     return when {
-        value.startsWith("http://", ignoreCase = true) ->
-            "https://" + value.substring("http://".length)
-        value.startsWith("https://", ignoreCase = true) -> value
-        value.startsWith("//") -> "https:$value"
-        else -> value
+        withSize.startsWith("http://", ignoreCase = true) ->
+            "https://" + withSize.substring("http://".length)
+        withSize.startsWith("https://", ignoreCase = true) -> withSize
+        withSize.startsWith("//") -> "https:$withSize"
+        else -> withSize
     }
 }
 
