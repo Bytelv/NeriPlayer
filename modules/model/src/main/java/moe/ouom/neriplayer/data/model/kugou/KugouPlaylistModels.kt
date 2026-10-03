@@ -88,5 +88,12 @@ data class KugouPlaylistSongPage(
     val page: Int,
     val pageSize: Int,
     val total: Int,
-    val hasMore: Boolean
+    val hasMore: Boolean,
+    /**
+     * 曲目接口顺带回的歌单封面 (`list_info.pic`)
+     *
+     * 自建歌单在 `/user/playlist` 与 `/playlist/detail` 里的 `pic` 都是空字符串,
+     * 只有这里仍带着封面, 是详情页封面的兜底来源之一。
+     */
+    val coverUrl: String? = null
 )

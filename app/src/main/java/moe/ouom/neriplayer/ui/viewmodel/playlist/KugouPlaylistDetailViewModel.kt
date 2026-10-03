@@ -152,7 +152,12 @@ class KugouPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                     loading = false,
                     loadingMore = false,
                     error = null,
-                    playlist = mergePlaylist(previous.playlist ?: playlist, detail),
+                    playlist = mergePlaylist(
+                        base = previous.playlist ?: playlist,
+                        detail = detail,
+                        pageCoverUrl = songPage.coverUrl,
+                        firstSongCoverUrl = songPage.songs.firstOrNull()?.coverUrl
+                    ),
                     songs = if (reset) {
                         mapped
                     } else {
@@ -277,15 +282,28 @@ class KugouPlaylistDetailViewModel(application: Application) : AndroidViewModel(
 
     /**
      * `/playlist/detail` 返回的元数据优先, 缺失字段保留列表页传来的值
+     *
+     * 封面尤其容易缺: 自建歌单在 `/user/playlist` 与 `/playlist/detail` 里的 `pic`
+     * 都是**空字符串**, 因此再退到曲目接口的 `list_info.pic`, 最后退到首曲封面,
+     * 否则详情页顶部会是一块空白。
      */
     private fun mergePlaylist(
         base: KugouPlaylist,
-        detail: KugouPlaylistSummary?
+        detail: KugouPlaylistSummary?,
+        pageCoverUrl: String? = null,
+        firstSongCoverUrl: String? = null
     ): KugouPlaylist {
-        if (detail == null) return base
+        val resolvedCover = sequenceOf(
+            detail?.coverUrl,
+            base.coverUrl,
+            pageCoverUrl,
+            firstSongCoverUrl
+        ).firstOrNull { !it.isNullOrBlank() }.orEmpty()
+
+        if (detail == null) return base.copy(coverUrl = resolvedCover)
         return base.copy(
             name = detail.name.ifBlank { base.name },
-            coverUrl = detail.coverUrl.orEmpty().ifBlank { base.coverUrl },
+            coverUrl = resolvedCover,
             creatorName = detail.creatorName.orEmpty().ifBlank { base.creatorName },
             trackCount = detail.trackCount.takeIf { it > 0 } ?: base.trackCount,
             intro = detail.intro.orEmpty().ifBlank { base.intro },

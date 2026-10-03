@@ -100,7 +100,6 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.Player
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.common.R as CoreCommonR
@@ -155,7 +154,6 @@ import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.theme.LocalNeriTargetColorScheme
 import moe.ouom.neriplayer.ui.component.lyrics.resolveLyricSeekPosition
 import moe.ouom.neriplayer.ui.viewmodel.NowPlayingViewModel
-import moe.ouom.neriplayer.ui.viewmodel.playlist.AddToPlaylistFeedback
 import moe.ouom.neriplayer.ui.viewmodel.playlist.AddToPlaylistViewModel
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
 import moe.ouom.neriplayer.data.model.SongItem
@@ -203,9 +201,6 @@ private const val CoverSourceBadgeRevealDelayMs =
 private const val HighUiDensityScaleThreshold = 1.1f
 private const val CompactNowPlayingPortraitMaxHeightDp = 600f
 private const val PlaybackActionToolbarItemCount = 5
-
-/** 添加成功后让结果行停留的时长, 避免用户只看到弹窗关闭动画 */
-private const val ADD_SHEET_SUCCESS_LINGER_MS = 1_400L
 private val PlaybackActionToolbarMinimumTouchTarget = 48.dp
 private val PlaybackActionToolbarSmallSlotThreshold = 40.dp
 private val NowPlayingMainControlsMinimumSpacing = 4.dp
@@ -608,8 +603,6 @@ fun NowPlayingScreen(
     val currentIndexInDisplay = queueDisplayState.currentDisplayIndex
 
     var showAddSheet by remember { mutableStateOf(false) }
-    // 添加成功后延迟收起弹窗的任务: 用户再次操作时要能取消掉上一次的延迟
-    var addSheetCloseJob by remember { mutableStateOf<Job?>(null) }
     var showQueueSheet by remember { mutableStateOf(false) }
     var showSleepTimerDialog by remember { mutableStateOf(false) }
     var showCoverPageSourceBadge by remember { mutableStateOf(false) }
@@ -1736,8 +1729,6 @@ fun NowPlayingScreen(
                             sheetState = addSheetState,
                             onDismissRequest = {
                                 showAddSheet = false
-                                addSheetCloseJob?.cancel()
-                                addSheetCloseJob = null
                                 // 关掉弹窗才清结果, 否则弹窗内的结果行会立刻消失
                                 addToPlaylistViewModel.consumeFeedback()
                             },
@@ -1755,19 +1746,9 @@ fun NowPlayingScreen(
                                 addToPlaylistViewModel.addCurrentSongToTarget(
                                     song = currentSong,
                                     target = target
-                                ) {
-                                    // 成功时让弹窗内的结果行停留一下再收起, 否则用户
-                                    // 只看得到弹窗关闭动画, 不知道到底成没成功;
-                                    // 失败时保留弹窗, 方便直接换个歌单重试。
-                                    val result = addToPlaylistViewModel.uiState.value.feedback
-                                    if (result is AddToPlaylistFeedback.Added) {
-                                        addSheetCloseJob?.cancel()
-                                        addSheetCloseJob = screenScope.launch {
-                                            delay(ADD_SHEET_SUCCESS_LINGER_MS)
-                                            showAddSheet = false
-                                        }
-                                    }
-                                }
+                                )
+                                // 刻意不自动关闭弹窗: 用户可能想继续加到别的歌单,
+                                // 结果行会留在弹窗里, 由用户自己关。
                             },
                             onRetryRemoteLoad = { addToPlaylistViewModel.refreshRemotePlaylists() }
                         )

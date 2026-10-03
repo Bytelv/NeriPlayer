@@ -427,5 +427,5 @@
     <string name="settings_kugou_vip_already_claimed">Daily membership already claimed</string>
     <string name="settings_kugou_vip_claim_failed">Claim failed: %1$s</string>
     <string name="settings_kugou_vip_claim_failed_generic">Claim failed, try again later</string>
-    <string name="settings_kugou_vip_claim_restricted">This account cannot claim it: the daily membership API is limited to KuGou Concept Edition accounts (error %1$s)</string>
+    <string name="settings_kugou_vip_claim_restricted">Claim rejected (error %1$s). This API comes from KuGou Concept Edition and may not be supported by regular accounts; check the diagnostic log for details</string>
 </resources>

@@ -662,4 +662,51 @@ class KugouPlaylistRepositoryTest {
 
         assertNull(song.fileId)
     }
+
+    /**
+     * 曲目接口的 `list_info.pic` 必须被带出来
+     *
+     * 自建歌单在 `/user/playlist` 与 `/playlist/detail` 里的 `pic` 是空字符串,
+     * 详情页封面只能靠这里兜底 (实测该字段带 `{size}` 占位符)。
+     */
+    @Test
+    fun `playlist song page keeps the list info cover`() {
+        val json = JSONObject(
+            """
+            {
+              "count": 1,
+              "list_info": {
+                "name": "「0.8x」慢速歌曲",
+                "pic": "http://c1.kgimg.com/custom/{size}/20221223/20221223101844795550.jpg"
+              },
+              "songs": [
+                { "name": "先说谎的人", "hash": "6B5DCE5832B0CC91F3CB90FECF2B5B02", "timelen": 184344 }
+              ]
+            }
+            """.trimIndent()
+        )
+
+        val page = KugouPlaylistRepository.parsePlaylistSongPageForTest(json)
+
+        // http 必须升级为 https, 否则部分机型直接拒绝明文流量
+        assertEquals(
+            "https://c1.kgimg.com/custom/{size}/20221223/20221223101844795550.jpg",
+            page.coverUrl
+        )
+    }
+
+    /** 没有 list_info (或 pic 为空) 时封面应为 null, 让上层去退到首曲封面 */
+    @Test
+    fun `playlist song page cover is null when absent or blank`() {
+        assertNull(
+            KugouPlaylistRepository.parsePlaylistSongPageForTest(
+                JSONObject("""{"songs":[{"hash":"AAA"}]}""")
+            ).coverUrl
+        )
+        assertNull(
+            KugouPlaylistRepository.parsePlaylistSongPageForTest(
+                JSONObject("""{"list_info":{"pic":""},"songs":[{"hash":"AAA"}]}""")
+            ).coverUrl
+        )
+    }
 }

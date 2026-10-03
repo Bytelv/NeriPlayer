@@ -443,7 +443,24 @@ class KugouPlaylistRepository(private val client: KugouClient) {
                 page = page,
                 pageSize = pageSize,
                 declaredTotal = declaredTotal
-            )
+            ),
+            // 自建歌单只有在 list_info 里才带封面
+            coverUrl = resolveListInfoCoverUrl(json)
+        )
+    }
+
+    /**
+     * 取 `list_info.pic`
+     *
+     * 该字段可能是**空字符串**(歌单没设封面), 也可能带 `{size}` 占位符,
+     * 都由 [normalizeKugouImageUrl] 统一处理。
+     */
+    private fun resolveListInfoCoverUrl(json: JSONObject): String? {
+        val listInfo = json.optJSONObject("list_info")
+            ?: json.optJSONObject("listInfo")
+            ?: return null
+        return normalizeKugouImageUrl(
+            listInfo.optStringIgnoreCase("pic", "cover", "flexible_cover", "img")
         )
     }
 

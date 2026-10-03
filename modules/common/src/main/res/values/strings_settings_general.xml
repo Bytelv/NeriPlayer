@@ -427,5 +427,5 @@
     <string name="settings_kugou_vip_already_claimed">今日会员权益已领取过</string>
     <string name="settings_kugou_vip_claim_failed">领取失败：%1$s</string>
     <string name="settings_kugou_vip_claim_failed_generic">领取失败，请稍后重试</string>
-    <string name="settings_kugou_vip_claim_restricted">该账号无法领取：每日会员接口仅对酷狗概念版账号开放（错误码 %1$s）</string>
+    <string name="settings_kugou_vip_claim_restricted">领取被拒绝（错误码 %1$s）。该接口来自酷狗概念版，普通账号可能不支持；具体原因请看诊断日志</string>
 </resources>
