@@ -73,4 +73,8 @@
     <string name="playlist_add_to_reason_invalid_netease_id">This song has no usable NetEase song ID</string>
     <string name="playlist_add_to_reason_missing_kugou_hash">This song has no usable Kugou FileHash</string>
     <string name="playlist_add_to_reason_unsupported_platform">This platform does not support adding to playlists</string>
+    <string name="kugou_remove_from_playlist">Remove from playlist</string>
+    <string name="kugou_remove_from_playlist_success">Removed from playlist</string>
+    <string name="kugou_remove_from_playlist_failed">Failed to remove, please try again</string>
+    <string name="kugou_remove_from_playlist_missing_id">This song has no playlist file ID and cannot be removed</string>
 </resources>

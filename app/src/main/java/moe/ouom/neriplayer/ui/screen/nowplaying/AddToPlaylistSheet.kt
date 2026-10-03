@@ -35,8 +35,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SheetState
 import androidx.compose.material3.Text
@@ -44,6 +47,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalResources
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -84,6 +88,16 @@ internal fun AddToPlaylistSheet(
         sheetGesturesEnabled = false
     ) {
         LazyColumn(modifier = Modifier.bottomSheetScrollGuard()) {
+            // 上一次提交的结果: 让"未找到匹配 / 添加失败"在弹窗内也看得见,
+            // 不依赖弹窗收起之后才出现的 Snackbar
+            uiState.feedback?.let { feedback ->
+                item(key = "add-to-playlist-result", contentType = "result") {
+                    AddToPlaylistResultRow(
+                        message = addToPlaylistFeedbackMessage(LocalResources.current, feedback)
+                    )
+                }
+            }
+
             item(key = "add-to-playlist-local-header", contentType = "header") {
                 AddToPlaylistSectionHeader(
                     title = stringResource(CoreCommonR.string.playlist_add_to_group_local)
@@ -122,6 +136,35 @@ internal fun AddToPlaylistSheet(
                 Spacer(Modifier.height(12.dp))
             }
         }
+    }
+}
+
+/**
+ * 弹窗内的结果提示行
+ *
+ * 成功与失败都显示: 添加入口在播放页, 若只靠 Snackbar, 弹窗收起动画期间很容易
+ * 被用户错过。
+ */
+@Composable
+private fun AddToPlaylistResultRow(message: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 24.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Outlined.Info,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(18.dp)
+        )
+        Text(
+            text = message,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onSurface
+        )
     }
 }
 

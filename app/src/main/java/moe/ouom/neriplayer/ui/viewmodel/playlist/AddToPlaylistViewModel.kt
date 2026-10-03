@@ -120,6 +120,10 @@ class AddToPlaylistViewModel : ViewModel() {
 
     private var remoteLoadJob: Job? = null
 
+    /** 添加成功后的"静默刷新"任务, 避免同一平台重复并发刷新 */
+    private var neteaseReloadJob: Job? = null
+    private var kugouReloadJob: Job? = null
+
     /**
      * 弹窗打开时调用
      *
@@ -321,7 +325,43 @@ class AddToPlaylistViewModel : ViewModel() {
                 AddToPlaylistFeedback.AddFailed(target.platform, error.message)
             }
             _uiState.update { it.copy(submittingKey = null, feedback = feedback) }
+            if (feedback is AddToPlaylistFeedback.Added) {
+                // 曲目数变了: 静默刷新该平台的歌单列表, 否则弹窗里的数字是旧的
+                refreshTargetPlatformSilently(target.platform)
+            }
             onFinished()
+        }
+    }
+
+    /**
+     * 只刷新某个平台的歌单列表, 保留现有内容直到新数据回来
+     *
+     * 与 [refreshRemotePlaylists] 的区别: 不把列表置为 loading, 因此不会闪一下白屏
+     * (用户刚添加成功, 此时整屏 loading 会显得像出了错)。
+     */
+    private fun refreshTargetPlatformSilently(platform: AddToPlaylistPlatform) {
+        val job = when (platform) {
+            AddToPlaylistPlatform.LOCAL -> return
+            AddToPlaylistPlatform.NETEASE -> neteaseReloadJob
+            AddToPlaylistPlatform.KUGOU -> kugouReloadJob
+        }
+        if (job?.isActive == true) return
+        val newJob = viewModelScope.launch {
+            runCatching {
+                when (platform) {
+                    AddToPlaylistPlatform.LOCAL -> Unit
+                    AddToPlaylistPlatform.NETEASE -> loadNeteasePlaylists()
+                    AddToPlaylistPlatform.KUGOU -> loadKugouPlaylists()
+                }
+            }.onFailure { error ->
+                // 刷新失败不影响已经完成的添加
+                NPLogger.w(TAG, "刷新 ${platform} 歌单失败: ${error.message.orEmpty()}")
+            }
+        }
+        when (platform) {
+            AddToPlaylistPlatform.LOCAL -> Unit
+            AddToPlaylistPlatform.NETEASE -> neteaseReloadJob = newJob
+            AddToPlaylistPlatform.KUGOU -> kugouReloadJob = newJob
         }
     }
 

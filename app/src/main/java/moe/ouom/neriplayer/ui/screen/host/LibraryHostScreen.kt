@@ -575,6 +575,10 @@ fun LibraryHostScreen(
                                         picUrl = playlist.coverUrl,
                                         trackCount = playlist.trackCount,
                                         source = "kugou",
+                                        // usage 记录的 id 是 globalCollectionId 的散列,
+                                        // 不可逆; 这里把它原样存进未占用的 playlistId,
+                                        // 首页"继续播放"才能还原出可用的歌单
+                                        playlistId = playlist.globalCollectionId,
                                         subtitle = playlist.creatorName
                                     )
                                 }
@@ -830,8 +834,11 @@ private fun restoreNeteaseArtistSummary(id: Long?, name: String?): NeteaseArtist
  *
  * 用 global collection id 的稳定散列填充; 真正的身份由歌单 id 本身决定, 这里
  * 只影响使用记录的排序, 所以散列冲突可接受。
+ *
+ * 该散列不可逆, 因此记录使用情况时必须同时把 [KugouPlaylist.globalCollectionId]
+ * 存进 `recordOpen` 的 `playlistId`, 否则首页"继续播放"无法还原歌单。
  */
-private fun stableKugouPlaylistUsageId(playlist: KugouPlaylist): Long {
+internal fun stableKugouPlaylistUsageId(playlist: KugouPlaylist): Long {
     val key = playlist.globalCollectionId.ifBlank {
         playlist.listId.ifBlank { playlist.name }
     }

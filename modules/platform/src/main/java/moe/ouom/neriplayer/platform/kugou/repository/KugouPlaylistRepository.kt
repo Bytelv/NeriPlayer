@@ -258,6 +258,86 @@ class KugouPlaylistRepository(private val client: KugouClient) {
     }
 
     /**
+     * 从酷狗歌单移除歌曲
+     *
+     * 实测契约(**与添加接口不同, 参数走查询串**):
+     * `POST /playlist/tracks/del?listid=<歌单 listid>&fileids=<fileid[,fileid]>`
+     * 把参数放进 JSON body 会被回 "The listid field is required." /
+     * "The fileids field is required."。
+     *
+     * `fileids` 用的是歌单接口下发的 `fileid`, 不是 `hash` —— 因此
+     * [KugouSong.fileId] 为空时无法移除。
+     *
+     * @return 是否成功
+     */
+    suspend fun removeSongsFromPlaylist(
+        listId: String,
+        fileIds: List<String>
+    ): Boolean = withContext(Dispatchers.IO) {
+        val normalizedListId = listId.trim()
+        val normalizedFileIds = fileIds
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .distinct()
+        if (normalizedListId.isEmpty() || normalizedFileIds.isEmpty()) {
+            NPLogger.w(
+                TAG,
+                "酷狗移出歌单: listid 或 fileids 为空, 已跳过 " +
+                    "(listid=$normalizedListId, fileIds=${normalizedFileIds.size})"
+            )
+            return@withContext false
+        }
+
+        try {
+            val json = client.postJsonBody(
+                path = TRACKS_DEL_PATH,
+                body = JSONObject(),
+                query = mapOf(
+                    "listid" to normalizedListId,
+                    "fileids" to normalizedFileIds.joinToString(",")
+                )
+            )
+            // 空响应视为成功: 该接口成功时不保证回 JSON
+            if (json == null) return@withContext true
+
+            val errorCode = json.optInt("errorCode").takeIf { it != 0 }
+                ?: json.optInt("error_code").takeIf { it != 0 }
+                ?: json.optInt("errcode").takeIf { it != 0 }
+            if (errorCode != null) {
+                if (errorCode in KugouClient.SESSION_REQUIRED_ERROR_CODES) {
+                    throw KugouApiException.SessionRequired(SESSION_REQUIRED_MESSAGE)
+                }
+                NPLogger.w(
+                    TAG,
+                    "酷狗移出歌单失败: listid=$normalizedListId, errorCode=$errorCode, " +
+                        "msg=${json.optString("msg")}"
+                )
+                return@withContext false
+            }
+            // status=0 且无 errorCode 也视为失败
+            if (json.has("status") && json.optInt("status") != 1) {
+                NPLogger.w(
+                    TAG,
+                    "酷狗移出歌单未见成功标记: listid=$normalizedListId, " +
+                        "status=${json.optInt("status")}"
+                )
+                return@withContext false
+            }
+            true
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: KugouApiException.SessionRequired) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.w(
+                TAG,
+                "酷狗移出歌单异常: listid=$normalizedListId, ${error.message.orEmpty()}"
+            )
+            false
+        }
+    }
+
+    /**
      * 构造 `songs` 数组
      *
      * 实测元素会被反序列化成对象(字符串数组直接类型错误), `hash` 是必需项。
@@ -436,6 +516,9 @@ class KugouPlaylistRepository(private val client: KugouClient) {
 
         /** 写接口, 必须 POST (GET 会得到 405) */
         private const val TRACKS_ADD_PATH = "/playlist/tracks/add"
+
+        /** 移出歌单: POST, 参数走查询串 (与 add 不同) */
+        private const val TRACKS_DEL_PATH = "/playlist/tracks/del"
 
         internal const val SESSION_REQUIRED_MESSAGE = "酷狗未登录, 无法获取歌单"
 

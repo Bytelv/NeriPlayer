@@ -609,4 +609,57 @@ class KugouPlaylistRepositoryTest {
             json.getJSONArray("songs").getJSONObject(0).getString("hash")
         )
     }
+
+    /**
+     * 歌单接口的 `fileid` 必须被保留
+     *
+     * 它是 `POST /playlist/tracks/del` 的 `fileids` 参数; 早先它被混进 `id` 的兜底链
+     * 而没有单独保留, 导致无法从歌单移除曲目。
+     */
+    @Test
+    fun `playlist song keeps its file id`() {
+        val json = JSONObject(
+            """
+            {
+              "songs": [
+                {
+                  "name": "先说谎的人",
+                  "hash": "6B5DCE5832B0CC91F3CB90FECF2B5B02",
+                  "timelen": 184344,
+                  "fileid": 102,
+                  "mixsongid": 417327542
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+
+        val song = KugouPlaylistRepository.parsePlaylistSongPageForTest(json).songs.single()
+
+        assertEquals("102", song.fileId)
+        // id 仍是专辑音频 ID, 不能被 fileid 顶替
+        assertEquals("417327542", song.id)
+    }
+
+    /** 搜索接口没有 fileid, 此时应为 null 而不是伪造一个值 */
+    @Test
+    fun `song without file id leaves it null`() {
+        val json = JSONObject(
+            """
+            {
+              "songs": [
+                {
+                  "name": "NUNA3.0",
+                  "hash": "DFDED7F8E0D5BBD9AEE65881ADA50F7B",
+                  "timelen": 223869
+                }
+              ]
+            }
+            """.trimIndent()
+        )
+
+        val song = KugouPlaylistRepository.parsePlaylistSongPageForTest(json).songs.single()
+
+        assertNull(song.fileId)
+    }
 }

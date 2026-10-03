@@ -105,7 +105,7 @@ internal fun parseKugouSong(item: JSONObject): KugouSong? {
     val title = buildKugouTitle(item, artist)
 
     return KugouSong(
-        id = item.optStringIgnoreCase("MixSongID", "mixsongid", "Audioid", "audio_id", "songid", "fileid")
+        id = item.optStringIgnoreCase("MixSongID", "mixsongid", "Audioid", "audio_id", "songid")
             ?: hash,
         hash = hash,
         title = title,
@@ -115,7 +115,9 @@ internal fun parseKugouSong(item: JSONObject): KugouSong? {
         coverUrl = normalizeKugouImageUrl(
             item.optStringIgnoreCase("Image", "sizable_cover", "img", "cover")
         ),
-        durationMs = resolveKugouDurationMs(item)
+        durationMs = resolveKugouDurationMs(item),
+        // 歌单接口的 fileid: 移除曲目时要用 (搜索接口没有此字段)
+        fileId = item.optStringIgnoreCase("fileid", "file_id", "FileId")
     )
 }
 

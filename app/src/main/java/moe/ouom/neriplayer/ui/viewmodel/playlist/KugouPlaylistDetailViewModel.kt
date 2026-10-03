@@ -32,14 +32,29 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.data.model.SongItem
+import moe.ouom.neriplayer.data.model.SongSourceTags
 import moe.ouom.neriplayer.data.model.kugou.KugouPlaylistSummary
+import moe.ouom.neriplayer.data.model.kugou.KugouSong
 import moe.ouom.neriplayer.platform.kugou.repository.toKugouQueueSong
 import moe.ouom.neriplayer.ui.viewmodel.tab.KugouPlaylist
 
 /** 酷狗歌单详情页一次拉取的曲目数量 */
 private const val KUGOU_SONG_PAGE_SIZE = 60
+
+private const val TAG = "KugouPlaylistDetailViewModel"
+
+/** 这些提示是内部常量而非文案资源: 界面层会按字符串映射到本地化文案 */
+internal const val KUGOU_REMOVE_SUCCESS_MESSAGE = "kugou_remove_success"
+internal const val KUGOU_REMOVE_FAILED_MESSAGE = "kugou_remove_failed"
+internal const val KUGOU_REMOVE_MISSING_ID_MESSAGE = "kugou_remove_missing_id"
+
+/** 分页拼接时用于去重: 优先稳定身份, 退回 hash */
+private fun KugouSong.sourceStableKeyOrHash(): String = "${SongSourceTags.KUGOU}:$hash"
+
+private fun SongItem.stableKeyOrName(): String = sourceStableKey ?: name
 
 data class KugouPlaylistDetailUiState(
     val loading: Boolean = true,
@@ -47,8 +62,19 @@ data class KugouPlaylistDetailUiState(
     val error: String? = null,
     val playlist: KugouPlaylist? = null,
     val songs: List<SongItem> = emptyList(),
+    /**
+     * 与 [songs] 一一对应的原始酷狗曲目
+     *
+     * 界面展示用 [songs], 但"移出歌单"需要 `fileid`, 而 `SongItem` 不带这个字段,
+     * 因此在这里保留原始模型 (顺序与 [songs] 严格一致)。
+     */
+    val rawSongs: List<KugouSong> = emptyList(),
     val hasMore: Boolean = false,
-    val total: Int = 0
+    val total: Int = 0,
+    /** 正在移出的曲目名, 用于禁用菜单并给出进行中提示 */
+    val removingSongName: String? = null,
+    /** 一次性提示 (移出成功/失败) */
+    val message: String? = null
 )
 
 /**
@@ -132,6 +158,12 @@ class KugouPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                     } else {
                         (previous.songs + mapped).distinctBy { it.sourceStableKey ?: it.name }
                     },
+                    rawSongs = if (reset) {
+                        songPage.songs
+                    } else {
+                        (previous.rawSongs + songPage.songs)
+                            .distinctBy { it.sourceStableKeyOrHash() }
+                    },
                     hasMore = songPage.hasMore,
                     total = songPage.total
                 )
@@ -143,6 +175,102 @@ class KugouPlaylistDetailViewModel(application: Application) : AndroidViewModel(
                     loadingMore = false,
                     error = error.message ?: error.javaClass.simpleName
                 )
+            }
+        }
+    }
+
+    /**
+     * 把曲目移出当前酷狗歌单
+     *
+     * `fileid` 由歌单接口下发, 只能通过 [KugouPlaylistDetailUiState.rawSongs] 取到;
+     * 成功后本地先移除, 再重新拉第一页把 `total` 刷新成服务端的真实值
+     * (否则"移出后曲目数不变")。
+     */
+    fun removeSong(song: SongItem) {
+        val state = _uiState.value
+        if (state.removingSongName != null) return
+        val index = state.songs.indexOfFirst { it.stableKeyOrName() == song.stableKeyOrName() }
+        if (index < 0) return
+        val raw = state.rawSongs.getOrNull(index)
+        val fileId = raw?.fileId?.trim().orEmpty()
+        val listId = currentPlaylist?.listId.orEmpty()
+
+        if (fileId.isEmpty() || listId.isEmpty()) {
+            _uiState.value = state.copy(
+                message = KUGOU_REMOVE_MISSING_ID_MESSAGE
+            )
+            return
+        }
+
+        _uiState.value = state.copy(removingSongName = song.name, message = null)
+        viewModelScope.launch {
+            val removed = try {
+                withContext(Dispatchers.IO) {
+                    repository.removeSongsFromPlaylist(listId = listId, fileIds = listOf(fileId))
+                }
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                NPLogger.w(TAG, "酷狗移出歌单异常: ${error.message.orEmpty()}")
+                false
+            }
+
+            val current = _uiState.value
+            if (!removed) {
+                _uiState.value = current.copy(
+                    removingSongName = null,
+                    message = KUGOU_REMOVE_FAILED_MESSAGE
+                )
+                return@launch
+            }
+
+            // 本地立即移除, 界面不用等服务端
+            val remainingSongs = current.songs.filterIndexed { i, _ -> i != index }
+            val remainingRaw = current.rawSongs.filterIndexed { i, _ -> i != index }
+            _uiState.value = current.copy(
+                removingSongName = null,
+                songs = remainingSongs,
+                rawSongs = remainingRaw,
+                total = (current.total - 1).coerceAtLeast(0),
+                message = KUGOU_REMOVE_SUCCESS_MESSAGE
+            )
+            // 重新拉第一页, 让曲目数与服务端对齐, 并补上因移除而空出的位置
+            reloadFirstPage()
+        }
+    }
+
+    fun consumeMessage() {
+        if (_uiState.value.message != null) {
+            _uiState.value = _uiState.value.copy(message = null)
+        }
+    }
+
+    /** 静默刷新第一页: 不清空列表, 只把首屏数据与总数替换成最新的 */
+    private fun reloadFirstPage() {
+        val playlist = currentPlaylist ?: return
+        viewModelScope.launch {
+            try {
+                val songPage = withContext(Dispatchers.IO) {
+                    repository.fetchPlaylistSongs(
+                        globalCollectionId = playlist.globalCollectionId,
+                        listId = playlist.listId,
+                        page = 1,
+                        pageSize = KUGOU_SONG_PAGE_SIZE
+                    )
+                }
+                val previous = _uiState.value
+                _uiState.value = previous.copy(
+                    songs = songPage.songs.map { it.toKugouQueueSong() },
+                    rawSongs = songPage.songs,
+                    hasMore = songPage.hasMore,
+                    total = songPage.total
+                )
+                loadedPage = 1
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                // 刷新失败不影响已经完成的移除
+                NPLogger.w(TAG, "酷狗歌单刷新失败: ${error.message.orEmpty()}")
             }
         }
     }

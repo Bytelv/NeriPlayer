@@ -48,6 +48,7 @@ import androidx.compose.material.icons.automirrored.outlined.PlaylistAdd
 import androidx.compose.material.icons.automirrored.outlined.PlaylistPlay
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.outlined.DeleteOutline
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -56,6 +57,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -88,10 +90,14 @@ import moe.ouom.neriplayer.data.local.media.displayArtist
 import moe.ouom.neriplayer.data.local.media.displayName
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
+import moe.ouom.neriplayer.ui.feedback.NeriOverlaySnackbarHost
+import moe.ouom.neriplayer.ui.feedback.showNeriSnackbar
 import moe.ouom.neriplayer.ui.haptic.HapticFilledIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticIconButton
 import moe.ouom.neriplayer.ui.haptic.HapticTextButton
 import moe.ouom.neriplayer.ui.navigation.LocalMiniPlayerHeight
+import moe.ouom.neriplayer.ui.viewmodel.playlist.KUGOU_REMOVE_MISSING_ID_MESSAGE
+import moe.ouom.neriplayer.ui.viewmodel.playlist.KUGOU_REMOVE_SUCCESS_MESSAGE
 import moe.ouom.neriplayer.ui.viewmodel.playlist.KugouPlaylistDetailViewModel
 import moe.ouom.neriplayer.ui.viewmodel.tab.KugouPlaylist
 import moe.ouom.neriplayer.util.format.formatDuration
@@ -132,9 +138,25 @@ fun KugouPlaylistDetailScreen(
     val currentSong by PlayerManager.currentSongFlow.collectAsStateWithLifecycle()
     val miniPlayerHeight = LocalMiniPlayerHeight.current
     val listState = rememberLazyListState()
+    val snackbarHostState = remember { SnackbarHostState() }
 
     LaunchedEffect(playlist) {
         viewModel.start(playlist)
+    }
+
+    // 移出歌单的结果反馈 (成功/失败都要让用户看到)
+    LaunchedEffect(ui.message) {
+        val message = ui.message ?: return@LaunchedEffect
+        viewModel.consumeMessage()
+        snackbarHostState.showNeriSnackbar(
+            when (message) {
+                KUGOU_REMOVE_SUCCESS_MESSAGE ->
+                    resources.getString(CoreCommonR.string.kugou_remove_from_playlist_success)
+                KUGOU_REMOVE_MISSING_ID_MESSAGE ->
+                    resources.getString(CoreCommonR.string.kugou_remove_from_playlist_missing_id)
+                else -> resources.getString(CoreCommonR.string.kugou_remove_from_playlist_failed)
+            }
+        )
     }
 
     BackHandler { onBack() }
@@ -174,138 +196,147 @@ fun KugouPlaylistDetailScreen(
             )
         }
     ) { innerPadding ->
-        LazyColumn(
-            state = listState,
-            contentPadding = PaddingValues(bottom = miniPlayerHeight + 24.dp),
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(innerPadding)
-        ) {
-            item(key = PLAYLIST_HEADER_KEY) {
-                PlaylistModernHeroHeader(
-                    displayName = resolvedPlaylist.name,
-                    coverUrl = resolvedPlaylist.coverUrl.ifBlank { null },
-                    subtitle = heroSubtitle,
-                    offlineMode = offlineMode,
-                    height = PlaylistModernHeroHeight,
-                    coverContentDescription = resolvedPlaylist.name
-                )
-            }
-
-            item(key = PLAYLIST_ACTIONS_KEY) {
-                PlaylistModernActionSheet(
-                    coverUrl = resolvedPlaylist.coverUrl.ifBlank { null },
-                    offlineMode = offlineMode
-                ) {
-                    KugouPlaylistActionsRow(
-                        songCount = songs.size,
-                        onPlayAll = {
-                            if (songs.isNotEmpty()) onSongClick(songs, 0)
-                        },
-                        onAddAllToQueue = {
-                            songs.forEach { PlayerManager.addToQueueEnd(it) }
-                            AppFeedback.show(
-                                context = context,
-                                message = resources.getString(CoreCommonR.string.kugou_added_to_queue)
-                            )
-                        }
+        Box(modifier = Modifier.fillMaxSize()) {
+            LazyColumn(
+                state = listState,
+                contentPadding = PaddingValues(bottom = miniPlayerHeight + 24.dp),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(innerPadding)
+            ) {
+                item(key = PLAYLIST_HEADER_KEY) {
+                    PlaylistModernHeroHeader(
+                        displayName = resolvedPlaylist.name,
+                        coverUrl = resolvedPlaylist.coverUrl.ifBlank { null },
+                        subtitle = heroSubtitle,
+                        offlineMode = offlineMode,
+                        height = PlaylistModernHeroHeight,
+                        coverContentDescription = resolvedPlaylist.name
                     )
                 }
-            }
 
-            when {
-                ui.loading && songs.isEmpty() -> {
-                    item(key = KUGOU_LOADING_KEY) {
-                        KugouPlaylistStateSurface(
-                            coverUrl = resolvedPlaylist.coverUrl,
-                            offlineMode = offlineMode
-                        ) {
-                            CircularProgressIndicator()
+                item(key = PLAYLIST_ACTIONS_KEY) {
+                    PlaylistModernActionSheet(
+                        coverUrl = resolvedPlaylist.coverUrl.ifBlank { null },
+                        offlineMode = offlineMode
+                    ) {
+                        KugouPlaylistActionsRow(
+                            songCount = songs.size,
+                            onPlayAll = {
+                                if (songs.isNotEmpty()) onSongClick(songs, 0)
+                            },
+                            onAddAllToQueue = {
+                                songs.forEach { PlayerManager.addToQueueEnd(it) }
+                                AppFeedback.show(
+                                    context = context,
+                                    message = resources.getString(CoreCommonR.string.kugou_added_to_queue)
+                                )
+                            }
+                        )
+                    }
+                }
+
+                when {
+                    ui.loading && songs.isEmpty() -> {
+                        item(key = KUGOU_LOADING_KEY) {
+                            KugouPlaylistStateSurface(
+                                coverUrl = resolvedPlaylist.coverUrl,
+                                offlineMode = offlineMode
+                            ) {
+                                CircularProgressIndicator()
+                            }
+                        }
+                    }
+
+                    ui.error != null && songs.isEmpty() -> {
+                        item(key = KUGOU_ERROR_KEY) {
+                            KugouPlaylistStateSurface(
+                                coverUrl = resolvedPlaylist.coverUrl,
+                                offlineMode = offlineMode
+                            ) {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                                ) {
+                                    Text(
+                                        text = ui.error.orEmpty(),
+                                        color = MaterialTheme.colorScheme.error,
+                                        textAlign = TextAlign.Center
+                                    )
+                                    HapticTextButton(onClick = viewModel::retry) {
+                                        Text(text = stringResource(CoreCommonR.string.action_retry))
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    songs.isEmpty() -> {
+                        item(key = KUGOU_EMPTY_KEY) {
+                            KugouPlaylistStateSurface(
+                                coverUrl = resolvedPlaylist.coverUrl,
+                                offlineMode = offlineMode
+                            ) {
+                                Text(
+                                    text = stringResource(CoreCommonR.string.kugou_playlist_empty),
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    textAlign = TextAlign.Center
+                                )
+                            }
+                        }
+                    }
+
+                    else -> {
+                        itemsIndexed(
+                            items = songs,
+                            key = { index, song ->
+                                "${song.sourceStableKey ?: song.name}#$index"
+                            }
+                        ) { index, song ->
+                            PlaylistModernListItemSurface(
+                                coverUrl = resolvedPlaylist.coverUrl,
+                                offlineMode = offlineMode
+                            ) {
+                                KugouSongRow(
+                                    index = index + 1,
+                                    song = song,
+                                    isCurrentSong = currentSong?.sourceStableKey == song.sourceStableKey,
+                                    offlineMode = offlineMode,
+                                    removing = ui.removingSongName == song.name,
+                                    onClick = { onSongClick(songs, index) },
+                                    onPlayNext = { PlayerManager.addToQueueNext(song) },
+                                    onAddToQueueEnd = { PlayerManager.addToQueueEnd(song) },
+                                    onRemoveFromPlaylist = { viewModel.removeSong(song) }
+                                )
+                            }
                         }
                     }
                 }
 
-                ui.error != null && songs.isEmpty() -> {
-                    item(key = KUGOU_ERROR_KEY) {
-                        KugouPlaylistStateSurface(
-                            coverUrl = resolvedPlaylist.coverUrl,
-                            offlineMode = offlineMode
+                if (songs.isNotEmpty() && (ui.hasMore || ui.loadingMore)) {
+                    item(key = KUGOU_LOAD_MORE_KEY) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            contentAlignment = Alignment.Center
                         ) {
-                            Column(
-                                horizontalAlignment = Alignment.CenterHorizontally,
-                                verticalArrangement = Arrangement.spacedBy(8.dp)
-                            ) {
-                                Text(
-                                    text = ui.error.orEmpty(),
-                                    color = MaterialTheme.colorScheme.error,
-                                    textAlign = TextAlign.Center
-                                )
-                                HapticTextButton(onClick = viewModel::retry) {
-                                    Text(text = stringResource(CoreCommonR.string.action_retry))
+                            if (ui.loadingMore) {
+                                CircularProgressIndicator(modifier = Modifier.size(24.dp))
+                            } else {
+                                HapticTextButton(onClick = viewModel::loadMore) {
+                                    Text(text = stringResource(CoreCommonR.string.library_kugou_load_more))
                                 }
                             }
                         }
                     }
                 }
-
-                songs.isEmpty() -> {
-                    item(key = KUGOU_EMPTY_KEY) {
-                        KugouPlaylistStateSurface(
-                            coverUrl = resolvedPlaylist.coverUrl,
-                            offlineMode = offlineMode
-                        ) {
-                            Text(
-                                text = stringResource(CoreCommonR.string.kugou_playlist_empty),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-                    }
-                }
-
-                else -> {
-                    itemsIndexed(
-                        items = songs,
-                        key = { index, song ->
-                            "${song.sourceStableKey ?: song.name}#$index"
-                        }
-                    ) { index, song ->
-                        PlaylistModernListItemSurface(
-                            coverUrl = resolvedPlaylist.coverUrl,
-                            offlineMode = offlineMode
-                        ) {
-                            KugouSongRow(
-                                index = index + 1,
-                                song = song,
-                                isCurrentSong = currentSong?.sourceStableKey == song.sourceStableKey,
-                                offlineMode = offlineMode,
-                                onClick = { onSongClick(songs, index) },
-                                onPlayNext = { PlayerManager.addToQueueNext(song) },
-                                onAddToQueueEnd = { PlayerManager.addToQueueEnd(song) }
-                            )
-                        }
-                    }
-                }
             }
 
-            if (songs.isNotEmpty() && (ui.hasMore || ui.loadingMore)) {
-                item(key = KUGOU_LOAD_MORE_KEY) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 12.dp),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (ui.loadingMore) {
-                            CircularProgressIndicator(modifier = Modifier.size(24.dp))
-                        } else {
-                            HapticTextButton(onClick = viewModel::loadMore) {
-                                Text(text = stringResource(CoreCommonR.string.library_kugou_load_more))
-                            }
-                        }
-                    }
-                }
-            }
+            NeriOverlaySnackbarHost(
+                hostState = snackbarHostState,
+                bottomPadding = miniPlayerHeight
+            )
         }
     }
 }
@@ -386,7 +417,9 @@ private fun KugouSongRow(
     offlineMode: Boolean,
     onClick: () -> Unit,
     onPlayNext: () -> Unit,
-    onAddToQueueEnd: () -> Unit
+    onAddToQueueEnd: () -> Unit,
+    removing: Boolean = false,
+    onRemoveFromPlaylist: () -> Unit = {}
 ) {
     val context = LocalContext.current
     var menuExpanded by remember { mutableStateOf(false) }
@@ -489,6 +522,34 @@ private fun KugouSongRow(
                     onClick = {
                         menuExpanded = false
                         onAddToQueueEnd()
+                    }
+                )
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            text = stringResource(
+                                CoreCommonR.string.kugou_remove_from_playlist
+                            )
+                        )
+                    },
+                    leadingIcon = {
+                        if (removing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(18.dp),
+                                strokeWidth = 2.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Outlined.DeleteOutline,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.error
+                            )
+                        }
+                    },
+                    enabled = !removing,
+                    onClick = {
+                        menuExpanded = false
+                        onRemoveFromPlaylist()
                     }
                 )
             }

@@ -60,6 +60,7 @@ import moe.ouom.neriplayer.platform.youtube.api.transport.stableYouTubeMusicId
 import moe.ouom.neriplayer.data.playlist.usage.PlaylistUsageRepository
 import moe.ouom.neriplayer.data.model.stats.UsageEntry
 import moe.ouom.neriplayer.ui.screen.playlist.BiliPlaylistDetailScreen
+import moe.ouom.neriplayer.ui.screen.playlist.KugouPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.NeteaseAlbumDetailScreen
@@ -77,11 +78,13 @@ import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylistKind
+import moe.ouom.neriplayer.ui.viewmodel.tab.KugouPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.YouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.viewmodel.playlist.BiliVideoItem
 import moe.ouom.neriplayer.ui.util.restoreBiliPlaylist
 import moe.ouom.neriplayer.ui.util.restoreAlbumSummary
+import moe.ouom.neriplayer.ui.util.restoreKugouPlaylist
 import moe.ouom.neriplayer.ui.util.restorePlaylistSummary
 import moe.ouom.neriplayer.ui.util.restoreYouTubeMusicPlaylist
 import moe.ouom.neriplayer.ui.util.toSaveMap
@@ -95,6 +98,7 @@ private sealed class HomeSelectedItem {
     data class LocalArtist(val artistName: String) : HomeSelectedItem()
     data class Bili(val playlist: BiliPlaylist) : HomeSelectedItem()
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : HomeSelectedItem()
+    data class Kugou(val playlist: KugouPlaylist) : HomeSelectedItem()
 }
 
 private val HomeSelectedItem?.navigationDepth: Int
@@ -543,6 +547,15 @@ fun HomeHostScreen(
                                     offlineMode = offlineMode
                                 )
                             }
+
+                            is HomeSelectedItem.Kugou -> {
+                                KugouPlaylistDetailScreen(
+                                    playlist = current.playlist,
+                                    onBack = { selected = null },
+                                    onSongClick = onSongClick,
+                                    offlineMode = offlineMode
+                                )
+                            }
                         }
                     }
                 }
@@ -579,6 +592,10 @@ private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
                 "type" to "ytmusic",
                 "playlist" to item.playlist.toSaveMap()
             )
+            is HomeSelectedItem.Kugou -> hashMapOf(
+                "type" to "kugou",
+                "playlist" to item.playlist.toSaveMap()
+            )
         }
     },
     restore = { saved ->
@@ -592,6 +609,7 @@ private val homeSelectedItemSaver = mapSaver<HomeSelectedItem?>(
             "netease" -> restorePlaylistSummary(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Netease(it) }
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Bili(it) }
             "ytmusic" -> restoreYouTubeMusicPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.YouTubeMusic(it) }
+            "kugou" -> restoreKugouPlaylist(saved["playlist"] as? Map<*, *>)?.let { HomeSelectedItem.Kugou(it) }
             else -> null
         }
     }
@@ -649,6 +667,25 @@ private fun openRecent(
                 subtitle = entry.subtitle.orEmpty()
             )
             onSelected(HomeSelectedItem.Bili(bili))
+        }
+        "kugou" -> {
+            // globalCollectionId 才是取曲目的主键, 记录在 playlistId 里(见库页 recordOpen);
+            // 缺失时无法还原可用歌单, 直接忽略而不是打开一个空歌单
+            val globalCollectionId = entry.playlistId?.takeIf { it.isNotBlank() } ?: return
+            onSelected(
+                HomeSelectedItem.Kugou(
+                    KugouPlaylist(
+                        // usage 记录里只有 globalCollectionId; listId 仅用于回退接口,
+                        // 详情页会用 /playlist/detail 把它补齐, 这里先借用同一值占位
+                        listId = globalCollectionId,
+                        globalCollectionId = globalCollectionId,
+                        name = entry.name,
+                        coverUrl = entry.picUrl.orEmpty(),
+                        trackCount = entry.trackCount,
+                        creatorName = entry.subtitle.orEmpty()
+                    )
+                )
+            )
         }
         "youtubemusic" -> {
             val resolvedBrowseId = entry.browseId

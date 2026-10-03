@@ -38,7 +38,15 @@ data class KugouSong(
     val albumId: String? = null,
     val albumName: String? = null,
     val coverUrl: String? = null,
-    val durationMs: Long = 0L
+    val durationMs: Long = 0L,
+    /**
+     * 歌单内的文件 id (`fileid`)
+     *
+     * 只有 `/playlist/track/all` 这类歌单接口会下发, 是
+     * `POST /playlist/tracks/del` 的 `fileids` 参数。搜索接口没有这个字段,
+     * 因此可空 —— 缺它时无法从歌单移除该曲目。
+     */
+    val fileId: String? = null
 ) {
     fun isValid(): Boolean = hash.isNotBlank()
 }

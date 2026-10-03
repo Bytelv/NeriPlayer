@@ -73,4 +73,8 @@
     <string name="playlist_add_to_reason_invalid_netease_id">这首歌曲没有可用的网易云歌曲 ID</string>
     <string name="playlist_add_to_reason_missing_kugou_hash">这首歌曲没有可用的酷狗 FileHash</string>
     <string name="playlist_add_to_reason_unsupported_platform">该平台不支持添加歌单</string>
+    <string name="kugou_remove_from_playlist">移出歌单</string>
+    <string name="kugou_remove_from_playlist_success">已移出歌单</string>
+    <string name="kugou_remove_from_playlist_failed">移出失败，请稍后重试</string>
+    <string name="kugou_remove_from_playlist_missing_id">这首歌曲缺少歌单内文件 ID，无法移出</string>
 </resources>
