@@ -124,16 +124,23 @@ fun addNeteasePlaylistSongIdsWithCode(
             val retryCode = parseNeteaseCode(retry)
             return NeteasePlaylistAddOutcome(
                 success = retryCode == 200,
-                code = retryCode
+                code = retryCode,
+                detail = parseNeteaseMessage(retry)
             )
         }
-        return NeteasePlaylistAddOutcome(success = false, code = code)
+        return NeteasePlaylistAddOutcome(
+            success = false,
+            code = code,
+            detail = parseNeteaseMessage(raw)
+        )
     }
+    val message = parseNeteaseMessage(raw)
     NPLogger.w(
         "LocalPlaylistRepo",
-        "addSongsToPlaylist returned code=$code for playlistId=$playlistId, size=${songIds.size}"
+        "addSongsToPlaylist returned code=$code for playlistId=$playlistId, " +
+            "size=${songIds.size}, message=${message.orEmpty()}"
     )
-    return NeteasePlaylistAddOutcome(success = false, code = code)
+    return NeteasePlaylistAddOutcome(success = false, code = code, detail = message)
 }
 
 internal fun validateNeteaseSyncCandidates(

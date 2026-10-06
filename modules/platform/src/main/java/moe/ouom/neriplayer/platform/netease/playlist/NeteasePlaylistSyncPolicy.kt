@@ -208,6 +208,22 @@ internal fun parseNeteaseCode(raw: String): Int {
     return runCatching { JSONObject(raw).optInt("code", -1) }.getOrElse { -1 }
 }
 
+/**
+ * 取网易云响应里的说明文字
+ *
+ * 只回一个 `code=502` 时无法判断原因(会话失效? 歌曲无权限? 服务端限流?),
+ * 而响应体里的 `message` / `msg` 通常直接写明。
+ */
+internal fun parseNeteaseMessage(raw: String): String? {
+    if (raw.isBlank()) return null
+    val root = runCatching { JSONObject(raw) }.getOrNull() ?: return null
+    val candidates = listOf("message", "msg", "error", "reason")
+    candidates.forEach { key ->
+        root.optString(key).trim().takeIf { it.isNotEmpty() && it != "null" }?.let { return it }
+    }
+    return null
+}
+
 internal fun buildNeteaseFingerprint(
     name: String?,
     artist: String?,

@@ -46,6 +46,7 @@ import moe.ouom.neriplayer.data.model.playlist.AddToPlaylistPlatform
 import moe.ouom.neriplayer.data.model.playlist.AddToPlaylistTarget
 import moe.ouom.neriplayer.platform.kugou.api.KugouApiException
 import moe.ouom.neriplayer.platform.kugou.repository.KugouPlaylistRepository
+import moe.ouom.neriplayer.platform.netease.playlist.NeteasePlaylistAddOutcome
 import moe.ouom.neriplayer.platform.netease.playlist.addNeteasePlaylistSongIdsWithCode
 import moe.ouom.neriplayer.platform.netease.playlist.parseNeteaseRemotePlaylists
 
@@ -474,7 +475,7 @@ class AddToPlaylistViewModel : ViewModel() {
         if (searchedId == null) {
             return AddToPlaylistFeedback.AddFailed(
                 platform = AddToPlaylistPlatform.NETEASE,
-                detail = first.code?.let { "code=$it" }
+                detail = describeNeteaseFailure(first)
             )
         }
 
@@ -490,9 +491,23 @@ class AddToPlaylistViewModel : ViewModel() {
         } else {
             AddToPlaylistFeedback.AddFailed(
                 platform = AddToPlaylistPlatform.NETEASE,
-                detail = second.code?.let { "code=$it" } ?: first.code?.let { "code=$it" }
+                detail = describeNeteaseFailure(second).ifBlank { describeNeteaseFailure(first) }
             )
         }
+    }
+
+    /**
+     * 把网易云的失败信息拼成用户能看懂的一行
+     *
+     * 只有 `code=502` 时无法判断是会话失效、歌曲无权限还是服务端限流;
+     * 服务端通常会在 `message` 里写明, 一并带出来。
+     */
+    private fun describeNeteaseFailure(
+        outcome: NeteasePlaylistAddOutcome
+    ): String {
+        val code = outcome.code?.let { "code=$it" }
+        val message = outcome.detail?.trim()?.takeIf { it.isNotEmpty() }
+        return listOfNotNull(code, message).joinToString(" ")
     }
 
     private suspend fun addToKugouPlaylist(
