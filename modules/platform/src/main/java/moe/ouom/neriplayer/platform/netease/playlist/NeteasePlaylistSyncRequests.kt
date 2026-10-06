@@ -78,8 +78,28 @@ fun addNeteasePlaylistSongIdsBatch(
     client: NeteaseClient,
     playlistId: Long,
     songIds: List<Long>
-): Boolean {
-    if (songIds.isEmpty()) return true
+): Boolean = addNeteasePlaylistSongIdsWithCode(client, playlistId, songIds).success
+
+/**
+ * 同 [addNeteasePlaylistSongIdsBatch], 但把服务端返回码一并带出
+ *
+ * "添加失败"本身无法区分原因: songId 不存在(需要改用搜索匹配)、会话失效、
+ * 歌单不可写, 处理方式完全不同。调用方拿到 [NeteasePlaylistAddOutcome.code]
+ * 才能决定要不要回退到搜索。
+ */
+data class NeteasePlaylistAddOutcome(
+    val success: Boolean,
+    /** 服务端 code; 请求抛异常时为 null */
+    val code: Int? = null,
+    val detail: String? = null
+)
+
+fun addNeteasePlaylistSongIdsWithCode(
+    client: NeteaseClient,
+    playlistId: Long,
+    songIds: List<Long>
+): NeteasePlaylistAddOutcome {
+    if (songIds.isEmpty()) return NeteasePlaylistAddOutcome(success = true, code = 200)
     val raw = runCatching { client.addSongsToPlaylist(playlistId, songIds) }
         .getOrElse { error ->
             NPLogger.e(
@@ -87,23 +107,33 @@ fun addNeteasePlaylistSongIdsBatch(
                 "addSongsToPlaylist failed for playlistId=$playlistId: ${error.message}",
                 error
             )
-            return false
+            return NeteasePlaylistAddOutcome(
+                success = false,
+                detail = error.message
+            )
         }
     val code = parseNeteaseCode(raw)
-    if (code == 200) return true
+    if (code == 200) return NeteasePlaylistAddOutcome(success = true, code = code)
     if (code == 301 && client.hasLogin()) {
         val retry = retryNeteaseSessionRequest(
             client = client,
             ensureFailureMessage = "ensureWeapiSession retry failed",
             retryFailureMessage = "addSongsToPlaylist retry failed for playlistId=$playlistId"
-        ) { client.addSongsToPlaylist(playlistId, songIds) } ?: return false
-        return parseNeteaseCode(retry) == 200
+        ) { client.addSongsToPlaylist(playlistId, songIds) }
+        if (retry != null) {
+            val retryCode = parseNeteaseCode(retry)
+            return NeteasePlaylistAddOutcome(
+                success = retryCode == 200,
+                code = retryCode
+            )
+        }
+        return NeteasePlaylistAddOutcome(success = false, code = code)
     }
     NPLogger.w(
         "LocalPlaylistRepo",
         "addSongsToPlaylist returned code=$code for playlistId=$playlistId, size=${songIds.size}"
     )
-    return false
+    return NeteasePlaylistAddOutcome(success = false, code = code)
 }
 
 internal fun validateNeteaseSyncCandidates(

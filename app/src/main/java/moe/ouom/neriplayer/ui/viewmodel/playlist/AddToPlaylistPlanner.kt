@@ -137,6 +137,15 @@ fun AddToPlaylistSong.searchKeyword(): String {
  * 判定"这次点击该直接添加还是先搜索"
  *
  * 属于目标平台就用本地已知 id 直接添加; 否则交给目标平台的搜索匹配。
+ *
+ * 酷狗额外有一条: **只要手里已经有 FileHash 就直接用**, 不再去搜索。
+ * 原因有两层:
+ * - 同厂商不该再搜一遍。歌曲本身就来自酷狗(搜索/歌单)时 hash 是权威身份,
+ *   搜索纯属多余。
+ * - 更关键的是自动换源: 网易云歌曲换源播放到酷狗后, 歌曲**身份仍是网易云**
+ *   (只有播放地址指向酷狗), 因此会被判成"跨平台", 转而去做文本搜索 —— 搜不到
+ *   就报"未找到匹配"。而换源时其实已经拿到了正确的 hash, 这里复用它即可,
+ *   既避免那次多余的搜索, 也彻底消除"音源是酷狗却加不进酷狗歌单"的怪现象。
  */
 fun planAddToRemotePlaylist(
     song: AddToPlaylistSong?,
@@ -145,6 +154,9 @@ fun planAddToRemotePlaylist(
     if (song == null || song.name.isBlank()) {
         return AddToPlaylistResolution.Failed(AddToPlaylistFailure.SONG_UNAVAILABLE)
     }
+
+    // 已知 hash 就是最强匹配, 优先于任何搜索
+    val knownKugouHash = song.kugouHash.trim().takeIf { it.isNotEmpty() }
 
     return when (platform) {
         AddToPlaylistPlatform.LOCAL ->
@@ -159,20 +171,17 @@ fun planAddToRemotePlaylist(
             AddToPlaylistResolution.NeedsPlatformSearch(platform)
         }
 
-        AddToPlaylistPlatform.KUGOU -> if (song.isKugouSource) {
-            song.kugouHash
-                .trim()
-                .takeIf { it.isNotEmpty() }
-                ?.let {
-                    AddToPlaylistResolution.KugouHash(
-                        hash = it,
-                        title = song.name,
-                        artist = song.artist
-                    )
-                }
-                ?: AddToPlaylistResolution.Failed(AddToPlaylistFailure.MISSING_KUGOU_HASH)
-        } else {
-            AddToPlaylistResolution.NeedsPlatformSearch(platform)
+        AddToPlaylistPlatform.KUGOU -> when {
+            knownKugouHash != null -> AddToPlaylistResolution.KugouHash(
+                hash = knownKugouHash,
+                title = song.name,
+                artist = song.artist
+            )
+            // 明确是酷狗来源却没有 hash: 报明确原因, 不要退化成搜索
+            song.isKugouSource ->
+                AddToPlaylistResolution.Failed(AddToPlaylistFailure.MISSING_KUGOU_HASH)
+
+            else -> AddToPlaylistResolution.NeedsPlatformSearch(platform)
         }
     }
 }

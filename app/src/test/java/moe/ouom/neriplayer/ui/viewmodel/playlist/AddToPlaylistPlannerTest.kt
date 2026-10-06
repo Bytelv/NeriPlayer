@@ -277,6 +277,67 @@ class AddToPlaylistPlannerTest {
         )
     }
 
+    /**
+     * 手里已有酷狗 hash 时, 即使歌曲被判成其它平台也不该再去搜索
+     *
+     * 真机回归: 网易云歌曲经自动换源播放到酷狗后, 歌曲身份仍是网易云(只有播放
+     * 地址指向酷狗), 于是被当成"跨平台"去做文本搜索, 搜不到就报"未找到匹配" ——
+     * 表现为"音源明明来自酷狗, 却加不进酷狗歌单"。换源时其实已经拿到正确 hash。
+     */
+    @Test
+    fun `known kugou hash is reused without searching even for a foreign song`() = runTest {
+        var searchCalls = 0
+
+        val result = resolveAddToPlaylistOutcome(
+            song = song(
+                name = "Paris in the Rain",
+                artist = "Lauv",
+                isKugouSource = false,
+                kugouHash = "DA44597C1AB57B411792F2655DCF16BD"
+            ),
+            platform = AddToPlaylistPlatform.KUGOU,
+            search = {
+                searchCalls += 1
+                PlatformSearchResult.NotFound
+            }
+        )
+
+        assertEquals(
+            AddToPlaylistResolution.KugouHash(
+                hash = "DA44597C1AB57B411792F2655DCF16BD",
+                title = "Paris in the Rain",
+                artist = "Lauv"
+            ),
+            result
+        )
+        assertEquals("已知 hash 必须直连, 不该触发搜索", 0, searchCalls)
+    }
+
+    // ---------------------------------------------------------------- 网易云
+
+    /**
+     * 网易云来源歌曲用本地 id 直连, 不搜索
+     *
+     * `song.id` 不一定真是可用的 songId, 因此直连失败时由 ViewModel 层回退搜索
+     * (见 `AddToPlaylistViewModel.addToNeteasePlaylist`), 计划层只负责"能直连就直连"。
+     */
+    @Test
+    fun `netease source song uses its id directly`() = runTest {
+        var searchCalls = 0
+
+        val result = resolveAddToPlaylistOutcome(
+            song = song(isNeteaseSource = true, neteaseSongId = 3556L),
+            platform = AddToPlaylistPlatform.NETEASE,
+            search = {
+                searchCalls += 1
+                PlatformSearchResult.NotFound
+            }
+        )
+
+        assertEquals(AddToPlaylistResolution.NeteaseSongId(3556L), result)
+        assertEquals(0, searchCalls)
+    }
+
     // ---------------------------------------------------------------- 其它
 
     @Test

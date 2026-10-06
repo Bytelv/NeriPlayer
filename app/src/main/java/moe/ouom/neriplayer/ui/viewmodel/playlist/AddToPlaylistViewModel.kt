@@ -46,7 +46,7 @@ import moe.ouom.neriplayer.data.model.playlist.AddToPlaylistPlatform
 import moe.ouom.neriplayer.data.model.playlist.AddToPlaylistTarget
 import moe.ouom.neriplayer.platform.kugou.api.KugouApiException
 import moe.ouom.neriplayer.platform.kugou.repository.KugouPlaylistRepository
-import moe.ouom.neriplayer.platform.netease.playlist.addNeteasePlaylistSongIdsBatch
+import moe.ouom.neriplayer.platform.netease.playlist.addNeteasePlaylistSongIdsWithCode
 import moe.ouom.neriplayer.platform.netease.playlist.parseNeteaseRemotePlaylists
 
 private const val TAG = "AddToPlaylistViewModel"
@@ -390,7 +390,7 @@ class AddToPlaylistViewModel : ViewModel() {
 
         return when (resolution) {
             is AddToPlaylistResolution.NeteaseSongId ->
-                addToNeteasePlaylist(target, resolution.songId)
+                addToNeteasePlaylist(target, resolution.songId, song)
 
             is AddToPlaylistResolution.KugouHash -> addToKugouPlaylist(
                 target = target,
@@ -438,21 +438,60 @@ class AddToPlaylistViewModel : ViewModel() {
 
     private suspend fun addToNeteasePlaylist(
         target: AddToPlaylistTarget,
-        songId: Long
+        songId: Long,
+        song: AddToPlaylistSong
     ): AddToPlaylistFeedback {
         val playlistId = target.id.toLongOrNull()?.takeIf { it > 0L }
             ?: return AddToPlaylistFeedback.TargetUnavailable(AddToPlaylistPlatform.NETEASE)
-        val added = withContext(Dispatchers.IO) {
-            addNeteasePlaylistSongIdsBatch(
+
+        val first = withContext(Dispatchers.IO) {
+            addNeteasePlaylistSongIdsWithCode(
                 client = AppContainer.neteaseClient,
                 playlistId = playlistId,
                 songIds = listOf(songId)
             )
         }
-        return if (added) {
+        if (first.success) return AddToPlaylistFeedback.Added(target.name)
+
+        /*
+         * 直连用的 song.id 不一定真是网易云可用的 songId
+         * (下载/换源/历史等入口可能只带占位 id), 表现为"添加失败"。
+         * 这里按歌名+歌手在网易云重新搜一次, 用搜到的真实 id 再试一遍。
+         */
+        NPLogger.w(
+            TAG,
+            "网易云直连加歌失败(code=${first.code}), 尝试按歌名搜索真实 songId: " +
+                "song=${song.name}, artist=${song.artist}, id=$songId"
+        )
+        val searched = searchOnPlatform(AddToPlaylistPlatform.NETEASE, song)
+        val searchedId = (searched as? PlatformSearchResult.Found)
+            ?.candidate
+            ?.id
+            ?.trim()
+            ?.toLongOrNull()
+            ?.takeIf { it > 0L && it != songId }
+
+        if (searchedId == null) {
+            return AddToPlaylistFeedback.AddFailed(
+                platform = AddToPlaylistPlatform.NETEASE,
+                detail = first.code?.let { "code=$it" }
+            )
+        }
+
+        val second = withContext(Dispatchers.IO) {
+            addNeteasePlaylistSongIdsWithCode(
+                client = AppContainer.neteaseClient,
+                playlistId = playlistId,
+                songIds = listOf(searchedId)
+            )
+        }
+        return if (second.success) {
             AddToPlaylistFeedback.Added(target.name)
         } else {
-            AddToPlaylistFeedback.AddFailed(AddToPlaylistPlatform.NETEASE)
+            AddToPlaylistFeedback.AddFailed(
+                platform = AddToPlaylistPlatform.NETEASE,
+                detail = second.code?.let { "code=$it" } ?: first.code?.let { "code=$it" }
+            )
         }
     }
 
