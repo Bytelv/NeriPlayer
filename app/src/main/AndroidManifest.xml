@@ -84,9 +84,21 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
-                    android:scheme="neriplayer"
+                    android:scheme="${listenTogetherInviteScheme}"
                     android:host="listen-together"
                     android:pathPrefix="/join" />
+            </intent-filter>
+        </activity>
+        <activity
+            android:name=".activity.car.BluetoothMediaValidationActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true"
+            android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <data android:scheme="content" android:host="media"
+                    android:pathPrefix="/internal/audio/media/" android:mimeType="audio/*" />
             </intent-filter>
         </activity>
         <activity-alias

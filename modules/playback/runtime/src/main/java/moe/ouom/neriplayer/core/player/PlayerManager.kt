@@ -122,6 +122,7 @@ import moe.ouom.neriplayer.core.player.quality.effectiveNeteaseQuality
 import moe.ouom.neriplayer.core.player.quality.effectiveYouTubeQuality
 import moe.ouom.neriplayer.core.player.runtime.stats.PlaybackStatsOwner
 import moe.ouom.neriplayer.core.player.playback.AppPlaybackStatsWritePort
+import moe.ouom.neriplayer.core.player.persistence.stats.AppPlaybackStatsPendingWrites
 import moe.ouom.neriplayer.core.player.runtime.progress.PlaybackProgressOwner
 import moe.ouom.neriplayer.core.player.playback.PlayerManagerPlaybackProgressPort
 import moe.ouom.neriplayer.core.player.playback.playBiliVideoPartsImpl
@@ -176,6 +177,8 @@ import moe.ouom.neriplayer.core.player.persistence.updateSongTranslatedLyricsImp
 import moe.ouom.neriplayer.core.player.persistence.updateUserLyricOffsetImpl
 import moe.ouom.neriplayer.core.player.timer.SleepTimerManager
 import moe.ouom.neriplayer.data.model.playback.SleepTimerMode
+import moe.ouom.neriplayer.core.player.service.lyrics.XiaomiSuperIslandLyricBridge
+import moe.ouom.neriplayer.core.player.service.lyrics.LiveLyricNotificationBridge
 import moe.ouom.neriplayer.core.player.url.YOUTUBE_PLAYBACK_PREFER_M4A
 import moe.ouom.neriplayer.core.player.url.refreshCurrentSongUrlImpl
 import moe.ouom.neriplayer.core.player.url.safeCustomPlaybackCacheKey
@@ -301,7 +304,8 @@ object PlayerManager {
     internal var ioScope = newIoScope()
     internal var mainScope = newMainScope()
     internal var playbackStatsOwner = PlaybackStatsOwner(
-        ioScope, AppPlaybackStatsWritePort, PlaybackStatsTracker(AppQueueSongIdentity::stableKey)
+        ioScope, AppPlaybackStatsWritePort, PlaybackStatsTracker(AppQueueSongIdentity::stableKey, readClearedAt = AppPlaybackStatsWritePort::clearedAt),
+        AppPlaybackStatsPendingWrites.queue
     )
     @Volatile
     internal var usbExclusiveLivenessOwner = UsbExclusiveLivenessOwner(mainScope, PlayerManagerUsbExclusiveLivenessPort)
@@ -427,6 +431,10 @@ object PlayerManager {
     internal var externalBluetoothLyricsEnabled = false
     internal var externalBluetoothTranslationEnabled = false
     internal var dynamicIslandLyricsEnabled = false
+    internal var xiaomiSuperIslandLyricEnabled = false
+    internal var liveUpdateLyricEnabled = false
+    internal var xiaomiSuperIslandLyricBridge: XiaomiSuperIslandLyricBridge? = null
+    internal var liveLyricNotificationBridge: LiveLyricNotificationBridge? = null
     internal var floatingLyricsEnabled = false
     internal var floatingLyricsShowTranslation = true
     internal var cloudMusicLyricDefaultOffsetMs = DEFAULT_CLOUD_MUSIC_LYRIC_OFFSET_MS
@@ -1871,14 +1879,14 @@ object PlayerManager {
     )
 
     @Suppress("unused")
-    suspend fun updateSongLyrics(songToUpdate: SongItem, newLyrics: String?) =
+    suspend fun updateSongLyrics(songToUpdate: SongItem, newLyrics: String?): Boolean =
         this.updateSongLyricsImpl(songToUpdate, newLyrics)
 
     @Suppress("unused")
     suspend fun updateSongTranslatedLyrics(
         songToUpdate: SongItem,
         newTranslatedLyrics: String?
-    ) = this.updateSongTranslatedLyricsImpl(songToUpdate, newTranslatedLyrics)
+    ): Boolean = this.updateSongTranslatedLyricsImpl(songToUpdate, newTranslatedLyrics)
 
     suspend fun updateSongLyricsAndTranslation(
         songToUpdate: SongItem,
@@ -1887,7 +1895,8 @@ object PlayerManager {
         newRomanizedLyrics: String? = null,
         writeLocalMetadata: Boolean = false,
         persistLocalSidecars: Boolean = true,
-        syncDownloadedMetadata: Boolean = true
+        syncDownloadedMetadata: Boolean = true,
+        userEdited: Boolean = true
     ): Boolean = updateSongLyricsAndTranslationImpl(
         songToUpdate = songToUpdate,
         newLyrics = newLyrics,
@@ -1895,6 +1904,7 @@ object PlayerManager {
         newRomanizedLyrics = newRomanizedLyrics,
         writeLocalMetadata = writeLocalMetadata,
         persistLocalSidecars = persistLocalSidecars,
-        syncDownloadedMetadata = syncDownloadedMetadata
+        syncDownloadedMetadata = syncDownloadedMetadata,
+        userEdited = userEdited
     )
 }

@@ -31,6 +31,7 @@ import androidx.work.Configuration as WorkConfiguration
 import moe.ouom.neriplayer.activity.UsbDeviceAttachHandling
 import moe.ouom.neriplayer.core.di.AppContainer
 import moe.ouom.neriplayer.core.di.player.installPlayerDependencies
+import moe.ouom.neriplayer.core.di.player.installPlaybackStatsCaptureBarrier
 import moe.ouom.neriplayer.core.download.GlobalDownloadManager
 import moe.ouom.neriplayer.core.download.ManagedDownloadStorage
 import moe.ouom.neriplayer.core.download.execution.scheduling.ids.newDownloadWorkManagerConfigurationBuilder
@@ -46,6 +47,7 @@ import moe.ouom.neriplayer.core.startup.app.AppProcessClassifier
 import moe.ouom.neriplayer.core.startup.app.AppStartupPlanner
 import moe.ouom.neriplayer.core.startup.app.WebViewDataDirectorySuffix
 import moe.ouom.neriplayer.core.startup.app.YouTubeMusicUiGatewayInitializer
+import moe.ouom.neriplayer.core.player.shizuku.AndroidRuntimeCompatibility
 import moe.ouom.neriplayer.data.auth.youtube.YouTubeAuthRotationWorker
 import moe.ouom.neriplayer.data.kugou.KugouVipClaimScheduler
 import moe.ouom.neriplayer.data.local.media.metadata.LocalMediaMetadataRecoveryStore
@@ -78,6 +80,7 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        AndroidRuntimeCompatibility.installHiddenApiExemptions()
         AppFeedback.initialize(this)
         installPlayerDependencies(this)
         // 冷启动首个播放点击可能早于 Compose 的 SideEffect, 先把 Application 绑给播放器
@@ -87,6 +90,7 @@ class NeriPlayerApplication : Application(), WorkConfiguration.Provider {
             configuredMainProcessName = applicationInfo.processName,
             packageName = packageName
         )
+        installPlaybackStatsCaptureBarrier(runningInMainProcess)
         configureWebViewDataDirectoryIfNeeded(runningInMainProcess)
 
         // 初始化语言设置

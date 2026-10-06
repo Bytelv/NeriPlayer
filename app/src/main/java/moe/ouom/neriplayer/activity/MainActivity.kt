@@ -28,6 +28,7 @@ import android.annotation.SuppressLint
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color
 import android.net.Uri
 import android.os.Build
@@ -35,6 +36,7 @@ import android.os.Bundle
 import android.os.SystemClock
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.LocalActivityResultRegistryOwner
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -93,6 +95,8 @@ import androidx.compose.ui.unit.dp
 import androidx.core.graphics.drawable.toDrawable
 import androidx.core.graphics.toColorInt
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -148,14 +152,17 @@ import moe.ouom.neriplayer.data.ltw.invite.resolveListenTogetherInviteJoinBaseUr
 import moe.ouom.neriplayer.data.model.navigation.LauncherShortcutRequest
 import moe.ouom.neriplayer.navigation.launcherShortcutActionFromIntentAction
 import moe.ouom.neriplayer.ui.dialog.MobileDataDownloadInterruptionDialog
+import moe.ouom.neriplayer.ui.dialog.startupDebugBuildWarningPrompt
 import moe.ouom.neriplayer.ui.NeriApp
 import moe.ouom.neriplayer.ui.component.overlay.LocalOverlaySurfaceScale
+import moe.ouom.neriplayer.ui.component.overlay.LocalOverlayNavigationBarHidden
 import moe.ouom.neriplayer.ui.effect.glass.AdvancedGlassOverscrollFactory
 import moe.ouom.neriplayer.ui.feedback.AppFeedback
 import moe.ouom.neriplayer.ui.util.ClipboardCopyResult
 import moe.ouom.neriplayer.ui.util.copyPlainTextSafely
 import moe.ouom.neriplayer.ui.onboarding.StartupOnboardingScreen
 import moe.ouom.neriplayer.ui.screen.safemode.SafeModeScreen
+import moe.ouom.neriplayer.ui.sync.upgrade.StartupSyncUpgradePrompt
 import moe.ouom.neriplayer.ui.theme.rememberActualSystemDarkTheme
 import moe.ouom.neriplayer.util.crash.CrashReportStore
 import moe.ouom.neriplayer.core.crash.ExceptionHandler
@@ -164,7 +171,6 @@ import moe.ouom.neriplayer.common.locale.LanguageManager
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.util.platform.NightModeHelper
 import moe.ouom.neriplayer.core.startup.safemode.SafeModeManager
-import moe.ouom.neriplayer.util.platform.lockPortraitIfPhone
 import moe.ouom.neriplayer.util.platform.applyOnePlusHighDensityDisplayCorrection
 import moe.ouom.neriplayer.util.platform.applyPreferredHighRefreshRate
 import moe.ouom.neriplayer.util.platform.resolveOnePlusHighDensityUiScale
@@ -172,6 +178,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.time.Duration.Companion.milliseconds
 
 private const val STARTUP_SETTINGS_READ_TIMEOUT_MS = 3_000L
+private const val STATE_NOW_PLAYING_OPEN = "nowPlayingOpen"
+private const val STATE_PLAYER_PORTRAIT_REQUESTED = "playerPortraitRequested"
 
 private data class PendingAudioServiceStart(
     val requestToken: Long,
@@ -271,12 +279,21 @@ private fun LocalizedAppContent(
 }
 
 private fun MainActivity.setNeriContent(
+    safeModeActive: Boolean,
     content: @Composable () -> Unit
 ) {
     setContent {
+        val configuration = LocalConfiguration.current
+        val hideNavigationBar = shouldHideTabletNavigationBar(
+            smallestScreenWidthDp = configuration.smallestScreenWidthDp,
+            isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+            safeModeActive = safeModeActive
+        )
         CompositionLocalProvider(
+            LocalActivity provides this@setNeriContent,
             LocalActivityResultRegistryOwner provides this@setNeriContent,
             LocalOverscrollFactory provides AdvancedGlassOverscrollFactory,
+            LocalOverlayNavigationBarHidden provides hideNavigationBar,
             content = content
         )
     }
@@ -303,6 +320,7 @@ class MainActivity : ComponentActivity() {
         )
     }
     private var safeModeActive = false
+    private var nowPlayingOrientationState = NowPlayingOrientationState()
 
     override fun attachBaseContext(newBase: Context) {
         val localizedContext = LanguageManager.applyLanguage(newBase)
@@ -330,10 +348,17 @@ class MainActivity : ComponentActivity() {
             )
         }
         super.onCreate(savedInstanceState)
+        nowPlayingOrientationState = NowPlayingOrientationState(
+            playerOpen = !safeModeActive && savedInstanceState?.getBoolean(STATE_NOW_PLAYING_OPEN) == true,
+            portraitRequested = !safeModeActive &&
+                savedInstanceState?.getBoolean(STATE_PLAYER_PORTRAIT_REQUESTED) == true
+        )
+        applyNowPlayingOrientation()
         applyPreferredHighRefreshRate(startupSettingsSnapshot.preferHighRefreshRate)
         observePreferredHighRefreshRate()
-        lockPortraitIfPhone()
         enableEdgeToEdge()
+        applyNavigationBarVisibility()
+        observeImeDismissal()
         applyWindowBackground(
             StartupThemeResolver.resolveSnapshotUseDark(
                 snapshot = startupThemeSnapshot,
@@ -342,7 +367,7 @@ class MainActivity : ComponentActivity() {
         )
 
         if (safeModeActive) {
-            setNeriContent {
+            setNeriContent(safeModeActive = safeModeActive) {
                 val uiDensityScale by settingsRepository.uiDensityScaleFlow
                     .collectAsStateWithLifecycle(initialValue = 1.0f)
                 AppUiDensityRoot(uiDensityScale) {
@@ -368,7 +393,7 @@ class MainActivity : ComponentActivity() {
             return
         }
 
-        setNeriContent {
+        setNeriContent(safeModeActive = safeModeActive) {
             var selectedAppLanguage by remember {
                 mutableStateOf(LanguageManager.getCurrentLanguage(this@MainActivity))
             }
@@ -506,9 +531,11 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                         }
+                        var startupCrashReportReadCompleted by remember { mutableStateOf(false) }
                         LaunchedEffect(Unit) {
                             pendingStartupCrashReport =
                                 startupCrashReportManager.readPendingReport()
+                            startupCrashReportReadCompleted = true
                         }
                         LaunchedEffect(Unit) {
                             handleIncomingIntent(intent)
@@ -581,6 +608,7 @@ class MainActivity : ComponentActivity() {
                         val rootLifecycleOwner = LocalLifecycleOwner.current
                         var hasShownTokenWarning by rememberSaveable { mutableStateOf(false) }
                         var showTokenWarningDialog by rememberSaveable { mutableStateOf(false) }
+                        var startupTokenWarningCheckCompleted by remember { mutableStateOf(false) }
                         LaunchedEffect(stage, rootLifecycleOwner.lifecycle) {
                             if (stage != StartupStage.Main) {
                                 return@LaunchedEffect
@@ -611,6 +639,7 @@ class MainActivity : ComponentActivity() {
                                     NPLogger.d("MainActivity", "显示 GitHub 配置警告")
                                     showTokenWarningDialog = true
                                 }
+                                startupTokenWarningCheckCompleted = true
                             }
                         }
 
@@ -1085,9 +1114,32 @@ class MainActivity : ComponentActivity() {
                                             onNowPlayingVisibilityChanged = { visible ->
                                                 isNowPlayingVisible = visible
                                             },
+                                            onNowPlayingOpenChanged = { open ->
+                                                nowPlayingOrientationState =
+                                                    nowPlayingOrientationState.onPlayerOpenChanged(open)
+                                                applyNowPlayingOrientation()
+                                            },
+                                            onPhoneLandscapeBack = {
+                                                nowPlayingOrientationState =
+                                                    nowPlayingOrientationState.returnToPortrait()
+                                                applyNowPlayingOrientation()
+                                            },
                                             onLanguageChanged = { language ->
                                                 selectedAppLanguage = language
                                             }
+                                        )
+                                        val startupDialogsAvailable = startupCrashReportReadCompleted &&
+                                            startupTokenWarningCheckCompleted &&
+                                            pendingStartupCrashReport == null &&
+                                            !showTokenWarningDialog &&
+                                            pendingMobileDataDownloadInterruptionRequest == null &&
+                                            !showDialog && !showErrorDialog &&
+                                            pendingInvite == null && loudPlaybackConfirmation == null
+                                        val debugBuildWarningPending = startupDebugBuildWarningPrompt(
+                                            canShowDialog = startupDialogsAvailable
+                                        )
+                                        StartupSyncUpgradePrompt(
+                                            canShowDialog = startupDialogsAvailable && !debugBuildWarningPending
                                         )
                                     }
                                 }
@@ -1182,6 +1234,51 @@ class MainActivity : ComponentActivity() {
         scheduleStartupSyncIfNeeded()
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(STATE_NOW_PLAYING_OPEN, nowPlayingOrientationState.playerOpen)
+        outState.putBoolean(STATE_PLAYER_PORTRAIT_REQUESTED, nowPlayingOrientationState.portraitRequested)
+        super.onSaveInstanceState(outState)
+    }
+
+    private fun applyNowPlayingOrientation() {
+        val orientation = nowPlayingOrientationState.requestedOrientation(
+            resources.configuration.smallestScreenWidthDp
+        )
+        if (requestedOrientation != orientation) requestedOrientation = orientation
+    }
+
+    private fun applyNavigationBarVisibility() {
+        val configuration = resources.configuration
+        val hideNavigationBar = shouldHideTabletNavigationBar(
+            smallestScreenWidthDp = configuration.smallestScreenWidthDp,
+            isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+            safeModeActive = safeModeActive
+        )
+        val controller = WindowInsetsControllerCompat(window, window.decorView)
+        if (hideNavigationBar) {
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.navigationBars())
+        } else {
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_DEFAULT
+            controller.show(WindowInsetsCompat.Type.navigationBars())
+        }
+    }
+
+    private fun observeImeDismissal() {
+        var imeVisible = false
+        ViewCompat.setOnApplyWindowInsetsListener(window.decorView) { view, insets ->
+            val wasImeVisible = imeVisible
+            imeVisible = insets.isVisible(WindowInsetsCompat.Type.ime())
+            // 同窗口键盘关闭不一定改变焦点，只在关闭转换后恢复导航策略
+            if (wasImeVisible && !imeVisible) {
+                view.post {
+                    if (!isDestroyed && hasWindowFocus()) applyNavigationBarVisibility()
+                }
+            }
+            ViewCompat.onApplyWindowInsets(view, insets)
+        }
+    }
+
     @Suppress("DEPRECATION")
     private fun applyWindowBackground(isDark: Boolean) {
         val bgColor = if (isDark) "#121212".toColorInt() else Color.WHITE
@@ -1235,6 +1332,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        applyNavigationBarVisibility()
         if (safeModeActive) {
             return
         }
@@ -1252,6 +1350,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyNavigationBarVisibility()
         if (safeModeActive) {
             return
         }

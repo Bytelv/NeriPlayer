@@ -353,7 +353,8 @@ internal fun appSettingsRouteStateFlow(repo: SettingsRepository): Flow<AppSettin
 internal fun initialAppSettingsRouteState(
     initialThemeSnapshot: ThemePreferenceSnapshot,
     startupPlaybackPreferences: PlaybackPreferenceSnapshot,
-    initialAdvancedBlurQuality: AdvancedBlurQuality
+    initialAdvancedBlurQuality: AdvancedBlurQuality,
+    initialLyricFontScales: LyricFontScales
 ): AppSettingsRouteState = AppSettingsRouteState(
     appearance = AppAppearanceSettingsState(
         theme = AppThemeSettingsState(
@@ -388,7 +389,7 @@ internal fun initialAppSettingsRouteState(
             lyricBlurEnabled = true,
             lyricBlurAmount = 1.5f,
             floatingLyricsPreferences = FloatingLyricsPreferences(),
-            lyricFontScales = LyricFontScales( coverLyric = 1.0f, coverTranslation = 1.0f, lyricsPageLyric = 1.0f, lyricsPageTranslation = 1.0f )
+            lyricFontScales = initialLyricFontScales
         ),
         lyricOffsets = AppLyricOffsetsSettingsState(
             cloudMusicLyricDefaultOffsetMs = startupPlaybackPreferences.cloudMusicLyricDefaultOffsetMs,

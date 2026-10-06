@@ -47,6 +47,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.Saver
+import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
@@ -58,6 +59,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import moe.ouom.neriplayer.ui.screen.artist.NeteaseArtistDetailScreen
+import moe.ouom.neriplayer.ui.screen.artist.BiliUploaderDetailScreen
+import moe.ouom.neriplayer.ui.screen.artist.YouTubeMusicCreatorNavigationScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalArtistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.HotPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.playlist.LocalPlaylistDetailScreen
@@ -69,6 +72,9 @@ import moe.ouom.neriplayer.ui.screen.playlist.YouTubeMusicPlaylistDetailScreen
 import moe.ouom.neriplayer.ui.screen.tab.library.LibraryTab
 import moe.ouom.neriplayer.ui.screen.tab.library.LibraryScreen
 import moe.ouom.neriplayer.data.model.NeteaseArtistSummary
+import moe.ouom.neriplayer.data.model.BiliUploaderSummary
+import moe.ouom.neriplayer.data.model.youtube.music.YouTubeMusicCreatorSummary
+import moe.ouom.neriplayer.ui.navigation.biliUploaderSourceRoute
 import moe.ouom.neriplayer.ui.viewmodel.tab.AlbumSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.PlaylistSummary
 import moe.ouom.neriplayer.ui.viewmodel.tab.BiliPlaylist
@@ -123,6 +129,17 @@ sealed class LibrarySelectedItem : Parcelable {
     data class YouTubeMusic(val playlist: YouTubeMusicPlaylist) : LibrarySelectedItem()
     @Parcelize
     data class Kugou(val playlist: KugouPlaylist) : LibrarySelectedItem()
+    @Parcelize
+    data class BiliUploader(val uploader: BiliUploaderSummary) : LibrarySelectedItem()
+    @Parcelize
+    data class YouTubeCreator(
+        val browseId: String,
+        val title: String,
+        val subtitle: String,
+        val coverUrl: String
+    ) : LibrarySelectedItem() {
+        fun summary() = YouTubeMusicCreatorSummary(browseId, title, subtitle, coverUrl)
+    }
 }
 
 private val LibrarySelectedItem?.navigationDepth: Int
@@ -131,6 +148,11 @@ private val LibrarySelectedItem?.navigationDepth: Int
         is LibrarySelectedItem.NeteaseArtistAlbum -> 2
         else -> 1
     }
+
+private data class LibraryNavigationScene(
+    val item: LibrarySelectedItem?,
+    val navigationDepth: Int
+)
 
 private fun LibrarySelectedItem.Hot.period(): PlaybackStatsPeriod {
     return if (monthly) PlaybackStatsPeriod.MONTH else PlaybackStatsPeriod.WEEK
@@ -184,6 +206,13 @@ fun LibraryHostScreen(
 ) {
     var selected by rememberSaveable(stateSaver = librarySelectedItemSaver) {
         mutableStateOf(null)
+    }
+    var creatorParents by rememberSaveable(
+        stateSaver = listSaver<List<LibrarySelectedItem>, LibrarySelectedItem>(
+            save = { it }, restore = { it }
+        )
+    ) {
+        mutableStateOf(emptyList())
     }
     var skipDetailCloseAnimation by rememberSaveable { mutableStateOf(false) }
     var pendingScrollSource by rememberSaveable {
@@ -244,6 +273,12 @@ fun LibraryHostScreen(
     fun closeSelectedDetail() {
         cancelPendingNeteaseCoverWarmup()
         skipDetailCloseAnimation = false
+        val parent = creatorParents.lastOrNull()
+        if (parent != null) {
+            selected = parent
+            creatorParents = creatorParents.dropLast(1)
+            return
+        }
         selected = when (val current = selected) {
             is LibrarySelectedItem.NeteaseArtistAlbum -> LibrarySelectedItem.NeteaseArtist(current.artist)
             else -> null
@@ -341,7 +376,10 @@ fun LibraryHostScreen(
     }
 
     val navigationTransition = updateTransition(
-        targetState = selected,
+        targetState = LibraryNavigationScene(
+            item = selected,
+            navigationDepth = if (selected == null) 0 else selected.navigationDepth + creatorParents.size
+        ),
         label = "library_host_switch"
     )
 
@@ -381,6 +419,14 @@ fun LibraryHostScreen(
     Surface(modifier = Modifier.fillMaxSize(), color = Color.Transparent) {
         navigationTransition.AnimatedContent(
             modifier = Modifier.fillMaxSize(),
+            contentKey = { scene ->
+                when (val item = scene.item) {
+                    is LibrarySelectedItem.NeteaseArtist -> "netease_artist_${item.artist.id}"
+                    is LibrarySelectedItem.YouTubeCreator -> youtubeMusicCreatorDetailStateKey(item.summary())
+                    is LibrarySelectedItem.BiliUploader -> "bili_uploader_${item.uploader.mid}"
+                    else -> item
+                }
+            },
             transitionSpec = {
                 if (
                     shouldSuppressRestoredMainTabHostEntry(
@@ -390,7 +436,7 @@ fun LibraryHostScreen(
                     )
                 ) {
                     EnterTransition.None togetherWith ExitTransition.None
-                } else if (targetState == null && skipDetailCloseAnimation) {
+                } else if (targetState.item == null && skipDetailCloseAnimation) {
                     EnterTransition.None togetherWith ExitTransition.None
                 } else {
                     advancedGlassHostNavigationTransition(
@@ -400,7 +446,8 @@ fun LibraryHostScreen(
                     )
                 }.using(SizeTransform(clip = true))
             }
-        ) { current ->
+        ) { scene ->
+            val current = scene.item
             val suppressRestoredSceneMotion = shouldSuppressRestoredMainTabHostEntry(
                 restoredEntry = suppressRestoredSceneEntry,
                 initialDepth = navigationTransition.currentState.navigationDepth,
@@ -410,7 +457,7 @@ fun LibraryHostScreen(
                 AdvancedGlassSceneMotion.None
             } else {
                 navigationTransition.animateAdvancedGlassSceneMotion(
-                    sceneState = current,
+                    sceneState = scene,
                     coherentFeedbackEnabled = coherentFeedbackEnabled,
                     navigationDepth = { item -> item.navigationDepth },
                     label = "library_host_scene"
@@ -420,7 +467,7 @@ fun LibraryHostScreen(
                 sceneMotion.revealTopFraction,
                 sceneMotion.contentTranslationYFraction,
                 sceneMotion.contentScale,
-                current.navigationDepth
+                scene.navigationDepth
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
                     if (current == null) {
@@ -521,6 +568,18 @@ fun LibraryHostScreen(
                             onNeteaseArtistClick = { artist ->
                                 captureLibraryScrollPosition(LibraryScrollSource.Favorite)
                                 openNeteaseArtist(artist)
+                            },
+                            onBiliUploaderClick = { uploader ->
+                                captureLibraryScrollPosition(LibraryScrollSource.Favorite)
+                                openLibrarySelectedItem(LibrarySelectedItem.BiliUploader(uploader))
+                            },
+                            onYouTubeMusicCreatorClick = { creator ->
+                                captureLibraryScrollPosition(LibraryScrollSource.Favorite)
+                                openLibrarySelectedItem(
+                                    LibrarySelectedItem.YouTubeCreator(
+                                        creator.browseId, creator.title, creator.subtitle, creator.coverUrl
+                                    )
+                                )
                             },
                             onYouTubeMusicPlaylistClick = { playlist ->
                                 skipDetailCloseAnimation = false
@@ -695,16 +754,67 @@ fun LibraryHostScreen(
                         is LibrarySelectedItem.YouTubeMusic -> {
                             YouTubeMusicPlaylistDetailScreen(
                                 playlist = current.playlist,
-                                onBack = { selected = null },
+                                onBack = { closeSelectedDetail() },
                                 onSongClick = onSongClick,
                                 offlineMode = offlineMode
                             )
+                        }
+                        is LibrarySelectedItem.YouTubeCreator -> {
+                            libraryStateHolder.SaveableStateProvider(
+                                key = youtubeMusicCreatorDetailStateKey(current.summary())
+                            ) {
+                                YouTubeMusicCreatorNavigationScreen(
+                                    creator = current.summary(),
+                                    onBack = { closeSelectedDetail() },
+                                    onSongClick = onSongClick,
+                                    onPlaylistClick = { playlist ->
+                                        creatorParents = creatorParents + current
+                                        openLibrarySelectedItem(LibrarySelectedItem.YouTubeMusic(playlist))
+                                    },
+                                    onCreatorClick = { creator ->
+                                        if (creator.browseId != current.browseId) {
+                                            creatorParents = creatorParents + current
+                                            openLibrarySelectedItem(
+                                                LibrarySelectedItem.YouTubeCreator(
+                                                    creator.browseId, creator.title, creator.subtitle, creator.coverUrl
+                                                )
+                                            )
+                                        }
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
+                        }
+                        is LibrarySelectedItem.BiliUploader -> {
+                            libraryStateHolder.SaveableStateProvider(
+                                "bili_uploader_${current.uploader.mid}"
+                            ) {
+                                BiliUploaderDetailScreen(
+                                    uploader = current.uploader,
+                                    onBack = { closeSelectedDetail() },
+                                    onPlayAudio = { videos, index ->
+                                        onPlayBiliAudioWithSourceRoute(
+                                            videos, index, biliUploaderSourceRoute(current.uploader)
+                                        )
+                                    },
+                                    onPlayParts = { videoInfo, index, coverUrl ->
+                                        onPlayBiliPartsWithSourceRoute(
+                                            videoInfo, index, coverUrl, biliUploaderSourceRoute(current.uploader)
+                                        )
+                                    },
+                                    onContentClick = { playlist ->
+                                        creatorParents = creatorParents + current
+                                        openLibrarySelectedItem(LibrarySelectedItem.Bili(playlist))
+                                    },
+                                    offlineMode = offlineMode
+                                )
+                            }
                         }
 
                         is LibrarySelectedItem.Bili -> {
                             BiliPlaylistDetailScreen(
                                 playlist = current.playlist,
-                                onBack = { selected = null },
+                                onBack = { closeSelectedDetail() },
                                 onPlayAudio = { videos, index ->
                                     onPlayBiliAudioWithSourceRoute(
                                         videos,
@@ -787,6 +897,19 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
                 "type" to "kugou",
                 "playlist" to item.playlist.toSaveMap()
             )
+            is LibrarySelectedItem.BiliUploader -> hashMapOf(
+                "type" to "biliArtist",
+                "mid" to item.uploader.mid,
+                "name" to item.uploader.name,
+                "avatar" to item.uploader.avatarUrl
+            )
+            is LibrarySelectedItem.YouTubeCreator -> hashMapOf(
+                "type" to "youtubeArtist",
+                "browseId" to item.browseId,
+                "title" to item.title,
+                "subtitle" to item.subtitle,
+                "coverUrl" to item.coverUrl
+            )
         }
     },
     restore = { saved ->
@@ -818,6 +941,24 @@ private val librarySelectedItemSaver = mapSaver<LibrarySelectedItem?>(
             "bili" -> restoreBiliPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Bili(it) }
             "ytmusic" -> restoreYouTubeMusicPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.YouTubeMusic(it) }
             "kugou" -> restoreKugouPlaylist(saved["playlist"] as? Map<*, *>)?.let { LibrarySelectedItem.Kugou(it) }
+            "biliArtist" -> {
+                val mid = (saved["mid"] as? Number)?.toLong()?.takeIf { it > 0 }
+                val name = (saved["name"] as? String)?.takeIf { it.isNotBlank() }
+                if (mid != null && name != null) {
+                    LibrarySelectedItem.BiliUploader(
+                        BiliUploaderSummary(mid, name, saved["avatar"] as? String ?: "")
+                    )
+                } else null
+            }
+            "youtubeArtist" -> {
+                val browseId = (saved["browseId"] as? String)?.takeIf { it.isNotBlank() }
+                val title = (saved["title"] as? String)?.takeIf { it.isNotBlank() }
+                if (browseId != null && title != null) {
+                    LibrarySelectedItem.YouTubeCreator(
+                        browseId, title, saved["subtitle"] as? String ?: "", saved["coverUrl"] as? String ?: ""
+                    )
+                } else null
+            }
             else -> null
         }
     }

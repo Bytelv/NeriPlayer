@@ -1,5 +1,6 @@
 package moe.ouom.neriplayer.ui.navigation
 
+import android.content.res.Configuration
 import android.content.res.Resources
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.FastOutSlowInEasing
@@ -13,6 +14,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
@@ -21,6 +23,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBarDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
@@ -35,12 +38,18 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalResources
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -58,6 +67,9 @@ import moe.ouom.neriplayer.ui.component.navigation.resolveBottomBarSelectionAlph
 import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayer
 import moe.ouom.neriplayer.ui.component.playback.NeriMiniPlayerDefaults
 import moe.ouom.neriplayer.ui.component.playback.resolvePlaybackWaiting
+import moe.ouom.neriplayer.util.platform.PHONE_SMALLEST_SCREEN_WIDTH_DP
+import moe.ouom.neriplayer.ui.effect.glass.LocalAdvancedGlassBackdrops
+import moe.ouom.neriplayer.ui.effect.glass.captureAdvancedGlassBackdrop
 import moe.ouom.neriplayer.ui.feedback.AppFeedbackHostEffect
 import moe.ouom.neriplayer.ui.feedback.NeriSnackbarHost
 import moe.ouom.neriplayer.data.model.SongItem
@@ -71,7 +83,6 @@ import moe.ouom.neriplayer.ui.banner.OfflineModeBottomBanner
 import moe.ouom.neriplayer.ui.banner.AppManagedProcessingBannerOwner
 import moe.ouom.neriplayer.ui.banner.AppManagedProcessingBannerPresentation
 import moe.ouom.neriplayer.ui.banner.managedProcessingRevealGesture
-import moe.ouom.neriplayer.ui.resolveBottomBarLayoutInsets
 
 internal data class AppBottomBarPresentation(
     val items: List<Pair<Destinations, ImageVector>>,
@@ -103,8 +114,28 @@ internal data class AppMiniPlayerPresentation(
 internal fun shouldShowMiniPlayer(hasSong: Boolean, showNowPlaying: Boolean): Boolean =
     hasSong && !showNowPlaying
 
-private fun reservedMiniPlayerHeight(hasSong: Boolean, showNowPlaying: Boolean) =
-    if (shouldShowMiniPlayer(hasSong, showNowPlaying)) NeriMiniPlayerDefaults.Height else 0.dp
+internal fun shouldSuppressPlaybackNavigation(
+    playbackOpen: Boolean,
+    overlayMounted: Boolean,
+    smallestScreenWidthDp: Int
+): Boolean =
+    // 手机底栏与播放页退出同时开始恢复，避免两段动画串联等待
+    playbackOpen || (smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP && overlayMounted)
+
+internal fun playbackSourceNavigationAction(
+    sourceRoute: String?,
+    navigate: (String) -> Unit
+): (() -> Unit)? = sourceRoute?.let { route -> { navigate(route) } }
+
+internal fun reservedMiniPlayerHeight(hasSong: Boolean, showNowPlaying: Boolean, smallestScreenWidthDp: Int) =
+    if (shouldShowMiniPlayer(hasSong, showNowPlaying)) {
+        if (smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP) {
+            NeriMiniPlayerDefaults.TabletHeight
+        } else NeriMiniPlayerDefaults.Height
+    } else 0.dp
+
+internal fun appSnackbarStartInset(useNavigationRail: Boolean, playbackOverlayVisible: Boolean) =
+    if (useNavigationRail && !playbackOverlayVisible) AppNavigationRailWidth else 0.dp
 
 private fun positiveBottomBarHeight(nextHeight: Int, previousHeight: Int): Int =
     if (nextHeight > 0) nextHeight else previousHeight
@@ -117,44 +148,77 @@ internal fun AppNavigationScaffold(
     snackbarHostState: SnackbarHostState,
     onMainTabSelected: (String) -> Unit,
     onExpandNowPlaying: () -> Unit,
+    onOpenCurrentPlaybackSource: (() -> Unit)? = null,
     content: @Composable (BottomBarLayoutInsets) -> Unit
 ) {
+    val configuration = LocalConfiguration.current
+    val dragBoundsOwner = remember { AppDragBoundsOwner() }
     val reservedMiniPlayerHeight = reservedMiniPlayerHeight(
         miniPlayer.hasSong,
-        bottomBar.showNowPlaying
+        bottomBar.showNowPlaying,
+        configuration.smallestScreenWidthDp
     )
     CompositionLocalProvider(LocalMiniPlayerHeight provides reservedMiniPlayerHeight) {
         AppFeedbackHostEffect(snackbarHostState)
-        Scaffold(
-            containerColor = Color.Transparent,
-            contentColor = MaterialTheme.colorScheme.onSurface,
-            snackbarHost = {
-                NeriSnackbarHost(
-                    hostState = snackbarHostState,
-                    bottomPadding = LocalMiniPlayerHeight.current
-                )
-            },
-            bottomBar = {
-                AppScaffoldBottomBar(
-                    bottomBar = bottomBar,
-                    onMainTabSelected = onMainTabSelected
-                )
-            }
-        ) { innerPadding ->
-            val layoutInsets = resolveBottomBarLayoutInsets(
-                baseBlurRequested = baseBlurRequested,
-                bottomBarInset = innerPadding.calculateBottomPadding().coerceAtLeast(0.dp),
-                reservedMiniPlayerHeight = reservedMiniPlayerHeight
+        BoxWithConstraints(Modifier.fillMaxSize()) {
+            val useNavigationRail = shouldUseAppNavigationRail(
+                configuration.smallestScreenWidthDp,
+                configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+                maxWidth
             )
-            CompositionLocalProvider(LocalMiniPlayerHeight provides layoutInsets.screenBottomInset) {
-                AppManagedProcessingLayer(
-                    layoutInsets = layoutInsets,
-                    miniPlayer = miniPlayer,
-                    showNowPlaying = bottomBar.showNowPlaying,
-                    offlineMode = bottomBar.offlineMode,
-                    onExpandNowPlaying = onExpandNowPlaying,
-                    content = content
+            Scaffold(
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+                snackbarHost = {
+                    NeriSnackbarHost(
+                        hostState = snackbarHostState,
+                        modifier = Modifier.padding(
+                            start = appSnackbarStartInset(useNavigationRail, bottomBar.showNowPlaying)
+                        ),
+                        bottomPadding = LocalMiniPlayerHeight.current
+                    )
+                },
+                bottomBar = {
+                    if (!useNavigationRail) {
+                        AppScaffoldBottomBar(
+                            bottomBar = bottomBar,
+                            onMainTabSelected = onMainTabSelected,
+                            onTabBarBoundsChanged = dragBoundsOwner::updateTabBarBounds
+                        )
+                    }
+                }
+            ) { innerPadding ->
+                val layoutInsets = resolveAppNavigationLayoutInsets(
+                    useNavigationRail = useNavigationRail,
+                    baseBlurRequested = baseBlurRequested,
+                    bottomBarInset = innerPadding.calculateBottomPadding().coerceAtLeast(0.dp),
+                    reservedMiniPlayerHeight = reservedMiniPlayerHeight
                 )
+                val dragBounds = dragBoundsOwner.visibleBounds(miniPlayer.hasSong, bottomBar.showNowPlaying)
+                CompositionLocalProvider(
+                    LocalMiniPlayerHeight provides layoutInsets.screenBottomInset,
+                    LocalMiniPlayerBoundsInRoot provides dragBounds.miniPlayer,
+                    LocalBottomTabBarBoundsInRoot provides dragBounds.bottomTabBar.takeUnless { useNavigationRail }
+                ) {
+                    AppAdaptiveNavigationContent(
+                        useNavigationRail = useNavigationRail,
+                        showNowPlaying = bottomBar.showNowPlaying,
+                        offlineMode = bottomBar.offlineMode,
+                        railContent = { AppNavigationRail(bottomBar, onMainTabSelected) },
+                        modifier = Modifier.fillMaxSize()
+                    ) {
+                        AppManagedProcessingLayer(
+                            layoutInsets = layoutInsets,
+                            miniPlayer = miniPlayer,
+                            showNowPlaying = bottomBar.showNowPlaying,
+                            offlineMode = bottomBar.offlineMode,
+                            onExpandNowPlaying = onExpandNowPlaying,
+                            onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource,
+                            onMiniPlayerBoundsChanged = dragBoundsOwner::updateMiniPlayerBounds,
+                            content = content
+                        )
+                    }
+                }
             }
         }
     }
@@ -169,8 +233,12 @@ private fun bottomBarVisibilityDuration(showNowPlaying: Boolean): Int =
 @Composable
 private fun AppScaffoldBottomBar(
     bottomBar: AppBottomBarPresentation,
-    onMainTabSelected: (String) -> Unit
+    onMainTabSelected: (String) -> Unit,
+    onTabBarBoundsChanged: (Rect) -> Unit
 ) {
+    val density = LocalDensity.current
+    val layoutDirection = LocalLayoutDirection.current
+    val tabInsets = NavigationBarDefaults.windowInsets
     var bottomBarHeightPx by remember { mutableIntStateOf(0) }
     val visibilityProgress by animateFloatAsState(
         targetValue = bottomBarVisibilityTarget(bottomBar.showNowPlaying),
@@ -200,7 +268,10 @@ private fun AppScaffoldBottomBar(
                 OfflineModeBottomBanner()
             }
             NeriBottomBar(
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("appBottomNavigation")
+                    .reportBottomTabBounds(tabInsets, density, layoutDirection, onTabBarBoundsChanged),
                 selectAlpha = selectAlpha,
                 items = bottomBar.items,
                 currentDestination = bottomBar.currentDestination,
@@ -235,9 +306,17 @@ private fun AppManagedProcessingLayer(
     showNowPlaying: Boolean,
     offlineMode: Boolean,
     onExpandNowPlaying: () -> Unit,
+    onOpenCurrentPlaybackSource: (() -> Unit)?,
+    onMiniPlayerBoundsChanged: (Rect) -> Unit,
     content: @Composable (BottomBarLayoutInsets) -> Unit
 ) {
     val (owner, presentation) = rememberManagedProcessingBannerSession()
+    val backdrops = LocalAdvancedGlassBackdrops.current
+    val contentCaptureModifier = if (backdrops == null) {
+        Modifier
+    } else {
+        Modifier.captureAdvancedGlassBackdrop(backdrops.content)
+    }
     val edgePx = with(LocalDensity.current) { MANAGED_LIBRARY_PROCESSING_REVEAL_EDGE.toPx() }
     val thresholdPx = with(LocalDensity.current) { MANAGED_LIBRARY_PROCESSING_DRAG_THRESHOLD.toPx() }
     Box(
@@ -254,13 +333,18 @@ private fun AppManagedProcessingLayer(
     ) {
         AppManagedProcessingBanner(presentation, owner::collapse)
         Box(modifier = Modifier.fillMaxSize().clipToBounds()) {
-            content(layoutInsets)
+            // 页面和拖拽歌曲一起进入底栏模糊取样，播放器自身保持在取样层外
+            AppDragOverlayHost(modifier = Modifier.fillMaxSize().then(contentCaptureModifier)) {
+                content(layoutInsets)
+            }
             AppMiniPlayerOverlay(
                 miniPlayer = miniPlayer,
                 showNowPlaying = showNowPlaying,
                 offlineMode = offlineMode,
                 bottomPadding = layoutInsets.miniPlayerBottomPadding,
-                onExpandNowPlaying = onExpandNowPlaying
+                onExpandNowPlaying = onExpandNowPlaying,
+                onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource,
+                onBoundsChanged = onMiniPlayerBoundsChanged
             )
         }
     }
@@ -340,10 +424,19 @@ private fun AppMiniPlayerOverlay(
     showNowPlaying: Boolean,
     offlineMode: Boolean,
     bottomPadding: Dp,
-    onExpandNowPlaying: () -> Unit
+    onExpandNowPlaying: () -> Unit,
+    onOpenCurrentPlaybackSource: (() -> Unit)?,
+    onBoundsChanged: (Rect) -> Unit
 ) {
     val controls = rememberMiniPlayerPlaybackControls()
     val resources = LocalResources.current
+    val tabletControls = if (LocalConfiguration.current.smallestScreenWidthDp >= PHONE_SMALLEST_SCREEN_WIDTH_DP) {
+        rememberMiniPlayerTabletActions(
+            visible = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying),
+            offlineMode = offlineMode,
+            onOpenCurrentPlaybackSource = onOpenCurrentPlaybackSource
+        )
+    } else null
     Box(modifier = Modifier.fillMaxSize()) {
         AnimatedVisibility(
             visible = shouldShowMiniPlayer(miniPlayer.hasSong, showNowPlaying),
@@ -370,7 +463,10 @@ private fun AppMiniPlayerOverlay(
                 hasCurrentSong = miniPlayer.hasSong,
                 isPlaying = controls.playbackRequested,
                 playPauseEnabled = !controls.usbPreparing,
-                modifier = Modifier,
+                modifier = Modifier.testTag("appMiniPlayer")
+                    .onGloballyPositioned { coordinates ->
+                        onBoundsChanged(coordinates.boundsInRoot())
+                    },
                 onPlayPause = { PlayerManager.togglePlayPause() },
                 onPrevious = { PlayerManager.previous() },
                 onNext = { PlayerManager.next() },
@@ -382,7 +478,8 @@ private fun AppMiniPlayerOverlay(
                     isPlaying = controls.playing,
                     usbPlaybackPreparing = controls.usbPreparing
                 ),
-                isAudioRouteMuted = controls.routeMuted
+                isAudioRouteMuted = controls.routeMuted,
+                tabletControls = tabletControls
             )
         }
     }

@@ -31,6 +31,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
@@ -55,7 +56,9 @@ import moe.ouom.neriplayer.core.player.audio.processing.PlaybackVolumeNormalizat
 import moe.ouom.neriplayer.core.player.engine.ReactiveRenderersFactory
 import moe.ouom.neriplayer.core.player.engine.datasource.ConditionalHttpDataSourceFactory
 import moe.ouom.neriplayer.core.player.lyrics.FloatingLyricsOverlayManager
+import moe.ouom.neriplayer.core.player.lyrics.attachLiveLyricSurfaces
 import moe.ouom.neriplayer.core.player.lyrics.clearExternalBluetoothLyricLine
+import moe.ouom.neriplayer.core.player.lyrics.releaseLiveLyricSurfaces
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalBluetoothLyrics
 import moe.ouom.neriplayer.core.player.lyrics.syncExternalTranslatedLyrics
 import moe.ouom.neriplayer.core.player.lyrics.updateExternalBluetoothLyricLine
@@ -65,9 +68,12 @@ import moe.ouom.neriplayer.data.model.playback.PlaybackAudioSource
 import moe.ouom.neriplayer.data.model.playback.PlayerEvent
 import moe.ouom.neriplayer.core.player.persistence.RestoredPlayerStateSnapshot
 import moe.ouom.neriplayer.core.player.persistence.applyRestoredStateSnapshot
+import moe.ouom.neriplayer.core.player.persistence.applyCommittedLyricOverrides
+import moe.ouom.neriplayer.data.sync.store.github.SecureTokenStorage
 import moe.ouom.neriplayer.core.player.persistence.restoreState
 import moe.ouom.neriplayer.core.player.persistence.scheduleStatePersist
 import moe.ouom.neriplayer.core.player.playback.AppPlaybackStatsWritePort
+import moe.ouom.neriplayer.core.player.persistence.stats.AppPlaybackStatsPendingWrites
 import moe.ouom.neriplayer.core.player.runtime.stats.PlaybackStatsOwner
 import moe.ouom.neriplayer.core.player.playback.advanceAfterPlaybackFailure
 import moe.ouom.neriplayer.core.player.playback.clearAudioRouteMuteSuppression
@@ -289,6 +295,7 @@ internal fun PlayerManager.initializeImpl(
             initializePlaybackEngine(app, effectiveMaxCacheSize)
             observePlaybackSettings()
             completeInitialization(restoredStateSnapshot, effectiveMaxCacheSize)
+            observeCommittedLyricOverrides()
         } catch (error: Throwable) {
             rollbackInitialization(error, effectiveMaxCacheSize)
         }
@@ -338,8 +345,11 @@ private fun PlayerManager.prepareInitializationSession(app: Application, effecti
     queueSessionBindings.prepareForNewEngine()
     lastStatePersistAtMs = 0L
     playbackProgressOwner.resetPersistenceClock()
+    AppPlaybackStatsPendingWrites.bind(app)
+    AppPlaybackStatsPendingWrites.queue.activate(AppPlaybackStatsWritePort)
     playbackStatsOwner = PlaybackStatsOwner(
-        ioScope, AppPlaybackStatsWritePort, PlaybackStatsTracker(AppQueueSongIdentity::stableKey)
+        ioScope, AppPlaybackStatsWritePort, PlaybackStatsTracker(AppQueueSongIdentity::stableKey, readClearedAt = AppPlaybackStatsWritePort::clearedAt),
+        AppPlaybackStatsPendingWrites.queue
     )
     val appWasInForeground = usbExclusiveLivenessOwner.appInForeground
     usbExclusiveLivenessOwner.cancelJobs()
@@ -599,19 +609,22 @@ private fun PlayerManager.initializePlaybackEngine(app: Application, effectiveMa
 
     AudioReactive.setEnabledChangeListener { enabled ->
         mainScope.launch {
+            val currentAudioReactiveEnabled = AudioReactive.enabled
             val playbackActive = isTransportActiveWithoutInitialization()
             if (
                 shouldUpdateAudioOffloadForReactiveChange(
                     audioReactiveEnabled = enabled,
-                    playbackActive = playbackActive
+                    playbackActive = playbackActive,
+                    currentAudioReactiveEnabled = currentAudioReactiveEnabled
                 )
             ) {
                 updateAudioOffloadPreferences("audio_reactive_$enabled")
             } else {
                 NPLogger.d(
                     "NERI-PlayerManager",
-                    "keep audio offload pipeline during active playback: " +
-                        "audioReactive=$enabled"
+                    "skip audio offload preference update: " +
+                        "audioReactive=$enabled currentAudioReactive=$currentAudioReactiveEnabled " +
+                        "playbackActive=$playbackActive"
                 )
             }
         }
@@ -1099,6 +1112,7 @@ private fun PlayerManager.createCachedPlaybackDataSourceFactory(
 }
 
 private fun PlayerManager.observePlaybackSettings() {
+    attachLiveLyricSurfaces()
     ioScope.launch {
         settingsRepo.audioQualityFlow.collect { q ->
             val previousQuality = preferredQuality
@@ -1527,6 +1541,27 @@ private fun PlayerManager.observePlaybackSettings() {
 
 }
 
+private fun PlayerManager.observeCommittedLyricOverrides() {
+    ioScope.launch {
+        try {
+            val storage = SecureTokenStorage(application)
+            storage.lyricOverridesVersion.collect {
+                try {
+                    applyCommittedLyricOverrides(storage)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    NPLogger.e("NERI-PlayerManager", "Failed to refresh committed lyric overrides", error)
+                }
+            }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            NPLogger.e("NERI-PlayerManager", "Failed to observe committed lyric overrides", error)
+        }
+    }
+}
+
 private fun PlayerManager.completeInitialization(
     restoredStateSnapshot: RestoredPlayerStateSnapshot?,
     effectiveMaxCacheSize: Long
@@ -1583,6 +1618,7 @@ private fun PlayerManager.rollbackInitialization(e: Throwable, effectiveMaxCache
     rollbackInitializationStep("cancelled mainScope", "cancel mainScope") { mainScope.cancel() }
     rollbackInitializationStep("cancelled ioScope", "cancel ioScope") { ioScope.cancel() }
     rollbackInitializationStep("released lyricon", "release lyricon") { LyriconManager.release() }
+    rollbackInitializationStep("released live lyrics", "release live lyrics") { releaseLiveLyricSurfaces() }
     initialized = false
 }
 
@@ -1884,6 +1920,7 @@ private fun PlayerManager.releaseMediaJobsAndLyrics() {
     floatingLyricsShowTranslation = true
     statusBarLyricsEnable = false
     clearExternalBluetoothLyricLine()
+    releaseLiveLyricSurfaces()
     FloatingLyricsOverlayManager.release()
     LyriconManager.release()
 }

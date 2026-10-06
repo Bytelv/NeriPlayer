@@ -182,19 +182,21 @@ Current positioning:
   `Library` is no longer just a playlist list. Local content can switch between
   playlists and artists, while `LocalArtistSummary` groups songs by display
   artist, splits common collaboration artist text, and keeps stable identity
-  and cover selection. NetEase songs can open an artist page with songs, albums,
-  and follow state.
+  and cover selection. NetEase songs can open an artist page with songs and albums.
+  NetEase artists, Bilibili uploaders, and YouTube creators can be followed locally
+  and browsed in separate Favorites categories. NetEase and YouTube Music support
+  importing followed artists from a signed-in account while preserving local follows.
 - **Large screens and daily controls are getting real polish**:
-  tablet/landscape Now Playing, Lyrics, Settings, and artist pages use steadier
-  width constraints and bottom control layouts. The `Mini Player` supports
+  tablet Now Playing, Lyrics, Settings, and artist pages, plus phone landscape
+  playback, use steadier width constraints and bottom controls. The `Mini Player` supports
   horizontal swipe for previous/next without expanding the full player. Home
   widgets include a 4x1 slim player, a 2x2 mini player, and a 4x2 playback card.
   Artwork-colored Material You cards adapt to light/dark themes, orientation,
   and host size. Wide cards add progress, favorites, and floating lyrics; all sizes retain previous,
   play/pause, and next track. Launcher shortcuts can continue
   playback, open Explore, open Library, or shuffle My Favorite Music.
-  Main bottom tabs use interruptible directional page transitions that retain both
-  outgoing and incoming scenes, avoiding glass, scroll-state, and page-state
+  Tablet main tabs use interruptible centered scale and opacity transitions; phones
+  retain directional horizontal transitions. Both retain outgoing and incoming scenes, avoiding glass, scroll-state, and page-state
   discontinuities during rapid switching. Long-pressing the Now Playing artwork
   opens an immersive preview with pinch-to-zoom, panning, and a download action.
 - **Sound controls are tied to the active audio session**:
@@ -238,8 +240,8 @@ Current positioning:
   tolerate legacy or malformed missing-field payloads, filter records without
   resolvable track identity, and keep songs with missing `addedAt` behind dated
   songs in current display-order playlists. Playback and traffic statistics use
-  debounced batch writes, flush at important lifecycle points, and keep a bounded
-  number of daily buckets.
+  debounced batch writes and flush at important lifecycle points. Playback totals
+  and daily buckets are retained without count eviction; traffic statistics keep their own window policy.
 - **Traffic controls are built into the product, not bolted on later**:
   `TrafficStatsRepository` tracks playback/download bytes, Wi-Fi/mobile/roaming
   distribution, and cache-hit bytes. Download flows can also warn before high-risk
@@ -347,6 +349,17 @@ Current positioning:
    standalone `Debug` tab will appear in the bottom bar.
 
 > Debug builds are for testing only. Their performance and size do not represent Release builds.
+> Debug builds use `moe.ouom.neriplayer.debug`, an orange launcher icon, and a `DEBUG` app-name suffix that also distinguishes themed icons. They can coexist with Release builds and keep separate app data.
+> Invitations shared by Debug use `neriplayer-debug://` to open that build. Regular invitation links can still be pasted into the app to join.
+> A Debug build warning appears after onboarding. Once confirmed, it stays dismissed across updates; clearing app data or reinstalling resets it.
+
+To run from Android Studio, select the `app` run configuration and the `debug`
+variant for `:app` in Build Variants. After changing the application ID configuration
+or switching to a branch containing that change, run **Sync Project with Gradle Files**.
+Rebuilding the APK alone does not refresh the IDE's cached launch package and can
+install Debug while launching an existing Release app. The launch component in
+the Run window should be
+`moe.ouom.neriplayer.debug/moe.ouom.neriplayer.activity.MainActivity`.
 
 For release build and signing details, see
 [CONTRIBUTING_EN.md](./CONTRIBUTING_EN.md#release-build).
@@ -399,6 +412,8 @@ For release build and signing details, see
   mismatched durations fall back to automatic lyrics.
   Remote tracks display cached lyrics first, then try the preferred source in the background.
   A successful match replaces the displayed lyrics; otherwise the cached lyrics remain.
+  When the current source has no romanization, NeriPlayer tries NetEase while keeping the
+  original lyrics and translation. The source's own romanization and manually edited or cleared tracks take precedence.
   Changing either setting clears cached lyrics so the new preference applies immediately.
   The **Lyric Offset** card has separate defaults for NetEase, QQ Music, Kugou,
   LRCLIB, and AMLL TTML, with individual and all-source reset buttons. The last
@@ -512,7 +527,11 @@ For release build and signing details, see
   song that was also manually added appears in both tabs. Removing a manually added song
   only removes its playlist entry, while confirming deletion of a downloaded song also
   removes its managed download files. User playlists support create, rename,
-  delete, reorder, and add-song actions. Playlist or song deletion shows undo
+  delete, reorder, and add-song actions. After a long press, delete and download stay
+  in the top bar while other actions move into More. In reorderable playlists, selected
+  songs can move together to a final position, with artwork and up to five neighboring
+  songs on each side shown in a preview before confirmation. After saving, the list
+  scrolls to the inserted songs and a snackbar offers undo. Playlist or song deletion shows undo
   feedback, and batch export into a local playlist confirms the target and can
   undo newly added items. Each detail shows the total play count, and Favorites
   offers playlist, artist, and Hot categories with playable weekly/monthly playlists
@@ -540,7 +559,7 @@ For release build and signing details, see
   Monthly Hot requires 30 minutes.
   Sync merging preserves aggregate totals and daily buckets, and can lift older
   bucket-only data into visible totals. Writes are
-  debounced and flushed at important lifecycle points, with a retention bound on daily buckets.
+  debounced and flushed at important lifecycle points; daily playback buckets are retained without count eviction.
 - 📶 **Traffic stats and download risk prompts**:
   tracks playback/download bytes, Wi-Fi/mobile/roaming distribution, and cache
   hits, and can warn before downloads on mobile data or roaming.
@@ -611,8 +630,18 @@ For release build and signing details, see
   disconnect, and USB exclusive playback toggles. The external lyrics path
   receives the current song, playback state, position, word-level lyrics,
   and translations. Original and translated Bluetooth lyrics have independent
-  switches; when both are enabled, they use separate title and artist fields while
+  switches; in the original lyric compatibility mode, enabling both uses separate title and artist fields while
   track identity remains available through album/description metadata.
+- 🚗 **Car playback**:
+  Bluetooth media metadata includes title, artist, album, duration, track counts, and artwork.
+  Under Lyrics settings, Bluetooth car display offers song information, song with lyrics,
+  or the original lyric compatibility mode. The default combines song and lyrics while preserving
+  the artist; previously saved mode choices remain unchanged.
+  Android Auto and AVRCP browsing clients can browse the queue, local playlists, recent history,
+  and offline songs, search the existing library, select songs, resume the saved queue,
+  and control playback. Connecting the browser does not start playback.
+  AVRCP has no separate lyric field, so lyrics use the title field. Artwork and lyric refresh
+  depend on both the phone and the car. A standalone Android Automotive OS app is not included.
 - 🛠️ **Developer mode and debug tools**:
   tap the version number **7 times** to reveal the `Debug` tab, including
   YouTube / Bili / NetEase / Search / Listen Together probes, log viewer, and
@@ -734,8 +763,9 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
   `Home / Explore / Library / Settings` are the primary tabs.
 - `Home` is displayed dynamically based on available Home cards. `Debug` appears
   only after enabling developer mode.
-- `MainTabLayerHost` retains outgoing and incoming main-tab scenes and moves them
-  horizontally according to tab order. Each scene owns saved state and its own
+- `MainTabLayerHost` retains outgoing and incoming main-tab scenes. Tablets use
+  centered scale and opacity animations, while phones retain horizontal translation. Each scene owns
+  saved state and its own
   advanced-glass owner, and interrupted reverse switches continue from the
   current transition progress.
 - Detail pages use a drawer-style rise over a slightly recessed background by
@@ -754,9 +784,43 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 - `LocalArtistDetailScreen` handles local artist pages with play-all,
   multi-select, playlist export, and batch downloads for online songs.
   `NeteaseArtistDetailScreen` handles NetEase artist songs/albums and follow state.
-- Tablet and landscape layouts constrain content width and adjust bottom control
+- Tablet layouts constrain content width and adjust bottom control
   areas on Now Playing, Lyrics, artist detail, and Settings pages to avoid overly
   wide content and scattered controls.
+- Tablet landscape uses a left navigation rail, while portrait keeps bottom navigation.
+  Only the selected rail item shows its label. Landscape hides system navigation;
+  an edge swipe reveals it temporarily, and portrait restores it.
+  Tablet mini players add previous and next buttons; narrow windows retain play/pause and swipe controls.
+  Portrait playback limits artwork and control widths to leave more space for lyrics.
+  The full Lyrics page uses a centered reading pane and compact controls in portrait.
+  Rail destinations are vertically centered. The player overlay naturally covers and reveals the rail during transitions,
+  preserving the underlying page width and blurred background.
+  Tablets default to bottom playback controls with progress, with lyrics at 125% and
+  translations at 115% of phone defaults. Saved font sizes and control positions remain in effect.
+- Tablets follow system rotation, while phones allow landscape only in Now Playing.
+  Landscape playback adapts artwork, lyrics, and controls to the available height:
+  tablets use spacious panes and short phone windows use compact panes with square
+  artwork. Phone landscape hides auxiliary
+  tools and uses smaller playback buttons; returning to portrait keeps it locked until
+  Now Playing is reopened. Landscape lyrics use a transparent pane and leave vertical
+  space around the artwork. Only phone landscape hides audio specifications; tablets
+  follow existing display preferences. Opening playback dismisses the
+  underlying input focus and text selection menu.
+  Phone landscape places playback controls and progress at the bottom right and track
+  actions at the top right; tablets and portrait keep control placement preferences.
+  Landscape cover and lyrics pages share the same layout while retaining separate
+  font and button-size preferences; horizontal swipes switch between the two pages.
+  Short phone landscape editing keeps a compact cover beside a scrollable form;
+  scrolling the fields does not drag the sheet. Song and lyrics editing adapt to
+  available height, with scrollable access to all actions when a keyboard or large text reduces space.
+- Tablet onboarding and disclaimer screens place guidance beside settings in both
+  orientations, with scrollable content and fixed actions.
+- Tablet NetEase artist detail places the profile beside songs and albums; playback
+  statistics use separate overview cards and rankings, adapting to narrower windows.
+  Artist artwork is smaller, with the follow action above the biography and a compact
+  gap between the works pane and the mini player.
+  Tablet comments leave space above the sheet, with compact landscape headers and
+  composers to keep more of the comment list visible.
 
 ### Playback, cache, and service
 
@@ -868,10 +932,18 @@ Independent and aggregate gates retain the same scopes and threshold: a scoped C
 - GitHub/WebDAV sync uses a locally generated UUID as the device identifier,
   not `ANDROID_ID`.
 - GitHub sync creates a raw binary blob through the Git Data API, writes it through
-  a tree and commit, and advances the default branch with a non-force ref update.
+  a tree and commit, and atomically advances the default branch with an expected HEAD condition.
   Reads use the raw content endpoint; Base64 in blob requests is only the API
-  transport envelope and does not change the stored body. Sync payloads are capped
-  at 12 MiB, with raw `GZIP(ProtoBuf)` in Data Saver mode and UTF-8 JSON otherwise.
+  transport envelope and does not change the stored body. New sync uses a Protobuf
+  record stream with ZSTD content chunks capped at 2 MiB each. A manifest commits
+  the complete snapshot; unchanged chunks are reused.
+- New installations default to V4. Existing installations with configured sync targets show the upgrade dialog on their first updated launch;
+  newly configured targets prompt when traditional cloud data or V3 is detected. The format is not backward compatible:
+  update every participating device before confirming. Confirmation immediately syncs and migrates that target.
+  Migration preserves all legacy lyrics; the permanent lossy compression option has been removed.
+  The upgrade prompt disappears after that target reaches V4; failures and cancellations remain retryable.
+  Deferring keeps the app usable while sync for targets awaiting upgrade stays paused. Offline device versions
+  cannot be verified automatically.
 
 ### Downloads, local import, and backups
 
@@ -990,18 +1062,23 @@ Current sync targets:
   fields, filter malformed records without resolvable track identity or valid
   deletion time, and keep songs with missing `addedAt` behind dated songs so bad
   snapshots cannot jump ahead in playlists.
-- 🪶 **Data Saver**: `backup-raw.bin` writes raw `GZIP(ProtoBuf)` bytes. The reader still
-  accepts `backup.json` and legacy `backup.bin` Base64 formats; JSON is used when Data Saver
-  is disabled. JSON, compressed, and decompressed payloads are capped at 8 MiB, 12 MiB, and
-  16 MiB respectively.
-- GitHub sync writes the raw payload through Git Data API blob/tree/commit calls and advances
-  the default branch with a non-force ref update. Reads use raw content; Base64 in blob requests
-  is only the API transport envelope. WebDAV servers without ETag/Last-Modified allow an
-  unconditional write only when the remote SHA-256 fingerprint is unchanged; otherwise the
-  sync reports a concurrency conflict.
-- Upgrade Android and Desktop sync clients together before enabling Data Saver writes. New
-  clients read raw GZIP, JSON, and legacy Base64, while older clients may only understand
-  historical Base64 text.
+- 🪶 **Incremental traffic**: V4 sync uses ZSTD chunks and only uploads changed content;
+  the publication point keeps the `neriplayer-sync-v3.manifest` filename. Full lyrics are stored only for user edits; online lyric caches
+  remain local. Edits and resets have their own durable registry.
+  Legacy lyrics with uncertain provenance are conservatively retained during initial migration;
+  see [lyric synchronization](modules/sync/LYRIC_SYNC.md).
+  Initial libraries or large changes may exceed 3 MB in total; individual objects and GitHub
+  Base64 request envelopes have bounded sizes.
+- GitHub reads at a fixed branch head and publishes the complete manifest with one commit
+  and an atomic GraphQL `beforeOid` ref update. WebDAV uploads immutable objects before conditionally publishing the manifest with
+  a strong ETag; subsequent writes fail if the server cannot provide that guarantee.
+- Legacy JSON, raw GZIP, and Base64 snapshots are read only when the manifest is absent.
+  The old 8/12/16 MiB limits apply to legacy reads, and Data Saver only affects legacy read
+  priority. A corrupt manifest fails explicitly. V3 archives are read only for migration;
+  unsupported future versions are rejected. Every syncing client must support V4;
+  older Android/Desktop clients keep using legacy files and cannot automatically converge with V4.
+- GitHub V4 publication requires a working GraphQL `updateRefs` endpoint; unsupported
+  servers fail explicitly while preserving the previous manifest.
 - 📦 **Remote format**: a GitHub repository is not end-to-end encryption.
   You are responsible for protecting remote files.
 - 🚫 **Sync boundary**: audio caches, downloaded files, local media files, cookies,
@@ -1012,7 +1089,8 @@ Current sync targets:
 1. Open Backup & Sync in Settings.
 2. Create a GitHub Personal Access Token with `repo` permission.
 3. Validate the token, then either create the default private repository or use an existing one.
-4. Enable automatic sync, or run a manual sync.
+4. New installations use V4 directly. If an upgrade dialog appears, update every participating device before confirming; confirmation immediately syncs and migrates the target.
+5. Enable automatic sync, or run a manual sync.
 
 ---
 
@@ -1024,9 +1102,9 @@ NeriPlayer also supports storing the same sync data in a WebDAV remote file.
 - Automatic sync and manual sync are supported.
 - `WorkManager` handles delayed sync, periodic sync, network checks, and retries.
 - WebDAV URL, username, and password are stored in local encrypted storage.
-- WebDAV prefers ETag/Last-Modified conditional writes. If a server exposes neither,
-  an unconditional write is allowed only after the remote SHA-256 fingerprint still
-  matches the snapshot that was read; otherwise the sync fails as a conflict.
+- WebDAV stores the V4 manifest and content objects beside the configured file, keeping the `neriplayer-sync-v3.manifest` filename.
+  Subsequent manifest writes require a strong ETag; servers without safe conditional
+  writes fail explicitly to prevent overwriting another device's changes.
 - The remote WebDAV file is not an end-to-end encrypted backup.
 
 ---
@@ -1178,9 +1256,9 @@ We will keep improving the project over time.
 - QQ Music is only a playback metadata/lyrics completion source.
 - GitHub/WebDAV sync is not end-to-end encrypted. Full config export files may
   contain auth data and must be protected by the user.
-- Data Saver writes raw GZIP bytes to `backup-raw.bin`. New Android and Desktop builds
-  retain `backup.json` and legacy `backup.bin` Base64 reads during migration, while
-  GitHub uploads use Git Data API binary blobs and non-force branch updates.
+- V4 uses verified ZSTD chunks and a manifest; V3 archives are read only for migration. Legacy GZIP, JSON, and Base64 are read
+  only when the manifest is absent. Synthetic encoding of ten million records does
+  not establish memory safety of full merging, restoration, or UI repositories on Android.
 - Long-form progress memory does not override an explicitly requested position or replace
   third-party playback history. BilibiliSponsorBlock calls a public API and stays disabled
   during Listen Together.
@@ -1282,6 +1360,9 @@ This means:
 - ✍️ An external native contribution is not added to the alternative-license
   scope merely by submitting a PR; the contributor must explicitly record a
   dual-license grant.
+- 📦 The Shizuku/XMSF firewall integration for Xiaomi Super Island lyrics
+  directly ports relevant Capsulyric source, which is released under GPL-3.0;
+  see [THIRD_PARTY_LICENSES.md](./THIRD_PARTY_LICENSES.md) for attribution.
 - 📚 See [LICENSE](./LICENSE) for details.
 
 ---

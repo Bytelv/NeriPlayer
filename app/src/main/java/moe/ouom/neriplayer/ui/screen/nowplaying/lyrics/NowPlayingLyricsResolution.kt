@@ -10,6 +10,7 @@ import moe.ouom.neriplayer.ui.component.lyrics.buildPhoneticLyricEntries
 import moe.ouom.neriplayer.lyrics.parser.flattenWordTimedEntries
 import moe.ouom.neriplayer.lyrics.parser.hasWordTimedEntries
 import moe.ouom.neriplayer.lyrics.parser.parseNeteaseLyricsAuto
+import moe.ouom.neriplayer.lyrics.parser.parseEmbeddedPhoneticLyrics
 import moe.ouom.neriplayer.lyrics.parser.resolvePreferredLyricContent
 
 internal data class NowPlayingBackgroundRawLyrics(
@@ -29,7 +30,9 @@ internal fun buildBackgroundRawLyrics(
     )
     val translated = effectiveRawLyric(inputs, ManagedLyricVariant.TRANSLATED)
     val phonetic = effectiveRawLyric(inputs, ManagedLyricVariant.ROMANIZED)
-        ?: netease.romanized.takeIf(String::isNotBlank)
+        ?: netease.romanized.takeIf {
+            it.isNotBlank() && parseEmbeddedPhoneticLyrics(original.orEmpty()).isEmpty()
+        }
     return NowPlayingBackgroundRawLyrics(original, translated, phonetic)
 }
 
@@ -37,6 +40,7 @@ internal fun effectiveRawLyric(
     inputs: NowPlayingLyricsBackgroundInputs,
     variant: ManagedLyricVariant
 ): String? {
+    inputs.song.confirmedLyricFor(variant)?.let { return it }
     val local = inputs.local.lyricFor(variant)
     val stored = inputs.song.storedLyricFor(variant)
     val downloaded = inputs.downloaded.lyricFor(variant)
@@ -52,6 +56,7 @@ internal suspend fun resolveBackgroundOriginal(
     sources: NowPlayingLyricsSources
 ): List<LyricEntry> {
     val song = inputs.song
+    song.confirmedLyricFor(ManagedLyricVariant.ORIGINAL)?.let { return parseAvailableLyric(it) }
     if (song?.isLocalSong() == true) return resolveLocalOriginal(inputs, raw)
     return resolveRemoteOriginal(inputs, raw, sources)
 }
@@ -109,7 +114,9 @@ private suspend fun resolveStoredOriginalWithWordTiming(
     sources: NowPlayingLyricsSources
 ): List<LyricEntry> {
     val parsed = parseNeteaseLyricsAuto(text)
-    if (!inputs.preferWordTimedLyrics || parsed.hasWordTimedEntries()) return parsed
+    // 预取的网易云原文仍需确认当前选源，避免沿用此前 AMLL 的音译缓存
+    val hasStoredOriginal = effectiveRawLyric(inputs, ManagedLyricVariant.ORIGINAL) != null
+    if (!inputs.preferWordTimedLyrics || (parsed.hasWordTimedEntries() && hasStoredOriginal)) return parsed
     val song = inputs.song ?: return parsed
     return preferOnlineWordTimedOriginal(parsed, song, sources)
 }
@@ -147,6 +154,7 @@ private suspend fun resolveBackgroundTranslatedUnchecked(
     raw: NowPlayingBackgroundRawLyrics,
     sources: NowPlayingLyricsSources
 ): List<LyricEntry> {
+    inputs.song.confirmedLyricFor(ManagedLyricVariant.TRANSLATED)?.let { return parseAvailableLyric(it) }
     val localText = localTranslatedLyric(inputs)
     if (localText != null) return parseNeteaseLyricsAuto(localText)
     raw.translated?.let { return resolveRawTranslation(it, inputs.song, sources) }
@@ -197,8 +205,12 @@ private suspend fun resolveBackgroundPhoneticUnchecked(
     sources: NowPlayingLyricsSources
 ): List<LyricEntry> {
     val song = inputs.song
-    val text = preferredPhoneticText(inputs, netease)
+    song.confirmedLyricFor(ManagedLyricVariant.ROMANIZED)?.let { return parseAvailableLyric(it) }
+    val text = effectiveRawLyric(inputs, ManagedLyricVariant.ROMANIZED)
     if (text != null) return parseNeteaseLyricsAuto(text)
+    val embedded = parseEmbeddedPhoneticLyrics(effectiveRawLyric(inputs, ManagedLyricVariant.ORIGINAL).orEmpty())
+    if (embedded.isNotEmpty()) return embedded
+    if (netease.romanized.isNotBlank()) return parseNeteaseLyricsAuto(netease.romanized)
     return readOnlinePhoneticUnlessLocal(song, sources)
 }
 
@@ -208,20 +220,6 @@ private suspend fun readOnlinePhoneticUnlessLocal(
 ): List<LyricEntry> {
     if (song == null || song.isLocalSong()) return emptyList()
     return sources.onlineRomanized(song)
-}
-
-private fun preferredPhoneticText(
-    inputs: NowPlayingLyricsBackgroundInputs,
-    netease: NowPlayingNeteaseFallback
-): String? {
-    val localText = localPhoneticLyric(inputs)
-    if (localText != null) return localText
-    return inputs.downloaded?.romanizedLyric ?: netease.romanized.takeIf(String::isNotBlank)
-}
-
-private fun localPhoneticLyric(inputs: NowPlayingLyricsBackgroundInputs): String? {
-    if (inputs.managed || inputs.song?.isLocalSong() != true) return null
-    return inputs.local?.romanizedLyric
 }
 
 internal fun buildBackgroundLyricsState(
