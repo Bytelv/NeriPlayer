@@ -335,6 +335,58 @@ class NeteasePlaylistSyncTest {
         verify(client).addSongsToPlaylist(91L, listOf(1L))
     }
 
+    // ------------------------------------------------- 单曲加歌的成员复查
+
+    /**
+     * 写接口返回语义不明的非 200(例如 502)时, 必须能复查出"其实已入歌单"
+     *
+     * 单曲加歌的回退重试全靠这个判断: 若复查不出"已存在", 就会拿另一个 songId
+     * 再加一次, 歌单里出现重复条目(真机已复现)。
+     */
+    @Test
+    fun `membership check reports an already present song`() {
+        val client = mock(NeteaseClient::class.java)
+        `when`(client.hasLogin()).thenReturn(true)
+        `when`(client.getSongDetail(listOf(1L))).thenReturn(songDetail(1L, "song"))
+        `when`(client.getPlaylistDetail(91L)).thenReturn(
+            "{\"code\":200,\"playlist\":{\"trackIds\":[{\"id\":1}],\"trackCount\":1}}"
+        )
+
+        // 已在歌单里
+        assertEquals(true, isNeteasePlaylistSongPresent(client, 91L, 1L))
+    }
+
+    /** 歌单能读且确实没有这首歌时返回 false(与"读不出来"的 null 区分开) */
+    @Test
+    fun `membership check reports an absent song`() {
+        val client = mock(NeteaseClient::class.java)
+        `when`(client.hasLogin()).thenReturn(true)
+        `when`(client.getPlaylistDetail(91L)).thenReturn(
+            "{\"code\":200,\"playlist\":{\"trackIds\":[],\"trackCount\":0}}"
+        )
+
+        assertEquals(false, isNeteasePlaylistSongPresent(client, 91L, 1L))
+    }
+
+    /** 查询失败时必须返回 null, 让调用方保守地不重试 */
+    @Test
+    fun `membership check returns null when the playlist cannot be read`() {
+        val client = mock(NeteaseClient::class.java)
+        `when`(client.getPlaylistDetail(91L)).thenThrow(IllegalStateException("offline"))
+
+        assertNull(isNeteasePlaylistSongPresent(client, 91L, 1L))
+    }
+
+    /** 参数不合法时不去打网络 */
+    @Test
+    fun `membership check rejects invalid arguments without a request`() {
+        val client = mock(NeteaseClient::class.java)
+
+        assertNull(isNeteasePlaylistSongPresent(client, 0L, 1L))
+        assertNull(isNeteasePlaylistSongPresent(client, 91L, 0L))
+        verifyNoInteractions(client)
+    }
+
     private fun song(id: Long, name: String = "song"): SongItem {
         return SongItem(id, name, "artist", "NeteaseAlbum", 7L, 1_000L, null, channelId = "netease", audioId = id.toString())
     }

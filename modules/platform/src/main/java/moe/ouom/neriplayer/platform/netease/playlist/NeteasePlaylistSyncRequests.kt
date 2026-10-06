@@ -81,6 +81,34 @@ fun addNeteasePlaylistSongIdsBatch(
 ): Boolean = addNeteasePlaylistSongIdsWithCode(client, playlistId, songIds).success
 
 /**
+ * 查询网易云歌单当前是否已包含某首歌
+ *
+ * 用途: 网易云对写接口可能返回语义不明的非 200(例如 502), 而歌曲**其实已经写入**。
+ * 此时若直接拿另一个 songId 重试, 歌单里就会出现重复。因此重试前必须先复查成员关系
+ * —— 与批量同步 `validateNeteaseSyncCandidates` 里"远端成员校验"的做法一致。
+ *
+ * @return true=确认已在歌单内; false=确认不在; null=查不出来(不应据此重试)
+ */
+fun isNeteasePlaylistSongPresent(
+    client: NeteaseClient,
+    playlistId: Long,
+    songId: Long
+): Boolean? {
+    if (playlistId <= 0L || songId <= 0L) return null
+    val snapshot = runCatching {
+        fetchNeteasePlaylistTrackSnapshot(client, playlistId)
+    }.getOrElse { error ->
+        NPLogger.w(
+            "LocalPlaylistRepo",
+            "isNeteasePlaylistSongPresent 查询失败: playlistId=$playlistId, ${error.message}"
+        )
+        return null
+    }
+    if (!snapshot.compareSucceeded) return null
+    return songId in snapshot.trackIds
+}
+
+/**
  * 同 [addNeteasePlaylistSongIdsBatch], 但把服务端返回码一并带出
  *
  * "添加失败"本身无法区分原因: songId 不存在(需要改用搜索匹配)、会话失效、
@@ -91,7 +119,16 @@ data class NeteasePlaylistAddOutcome(
     val success: Boolean,
     /** 服务端 code; 请求抛异常时为 null */
     val code: Int? = null,
-    val detail: String? = null
+    val detail: String? = null,
+    /**
+     * 请求本身是否失败(抛异常/未收到响应)
+     *
+     * 用来区分"服务端明确拒绝"与"根本没问成":
+     * - true: 服务端一定没有写入, 换个 songId 重试是安全的
+     * - false: 服务端返回了非 200, 但语义可能不明确(例如 502),
+     *   **重试有制造重复条目的风险**, 调用方不应盲目重试
+     */
+    val requestFailed: Boolean = false
 )
 
 fun addNeteasePlaylistSongIdsWithCode(
@@ -109,7 +146,8 @@ fun addNeteasePlaylistSongIdsWithCode(
             )
             return NeteasePlaylistAddOutcome(
                 success = false,
-                detail = error.message
+                detail = error.message,
+                requestFailed = true
             )
         }
     val code = parseNeteaseCode(raw)

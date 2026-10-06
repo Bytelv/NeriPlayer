@@ -48,6 +48,7 @@ import moe.ouom.neriplayer.platform.kugou.api.KugouApiException
 import moe.ouom.neriplayer.platform.kugou.repository.KugouPlaylistRepository
 import moe.ouom.neriplayer.platform.netease.playlist.NeteasePlaylistAddOutcome
 import moe.ouom.neriplayer.platform.netease.playlist.addNeteasePlaylistSongIdsWithCode
+import moe.ouom.neriplayer.platform.netease.playlist.isNeteasePlaylistSongPresent
 import moe.ouom.neriplayer.platform.netease.playlist.parseNeteaseRemotePlaylists
 
 private const val TAG = "AddToPlaylistViewModel"
@@ -455,13 +456,50 @@ class AddToPlaylistViewModel : ViewModel() {
         if (first.success) return AddToPlaylistFeedback.Added(target.name)
 
         /*
+         * 服务端返回非 200 时语义可能不明确(例如 502), 而歌曲**可能已经写进去了**。
+         * 先复查歌单成员关系:
+         * - 已在歌单里 -> 当作成功, 绝不能再用另一个 songId 重试(会重复)
+         * - 确认不在   -> 说明确实没加进去, 可以换 songId 重试
+         * - 查不出来   -> 保守起见不重试
+         */
+        val alreadyPresent = withContext(Dispatchers.IO) {
+            runCatching {
+                isNeteasePlaylistSongPresent(
+                    client = AppContainer.neteaseClient,
+                    playlistId = playlistId,
+                    songId = songId
+                )
+            }.getOrNull()
+        }
+        if (alreadyPresent == true) {
+            NPLogger.w(
+                TAG,
+                "网易云返回 code=${first.code} 但歌曲其实已入歌单, 按成功处理避免重复: " +
+                    "song=${song.name}, id=$songId"
+            )
+            return AddToPlaylistFeedback.Added(target.name)
+        }
+
+        if (alreadyPresent == null || !first.requestFailed) {
+            NPLogger.w(
+                TAG,
+                "网易云未确认写入(code=${first.code}, 复查=${alreadyPresent}), " +
+                    "不回退重试以免重复: song=${song.name}, id=$songId"
+            )
+            return AddToPlaylistFeedback.AddFailed(
+                platform = AddToPlaylistPlatform.NETEASE,
+                detail = describeNeteaseFailure(first)
+            )
+        }
+
+        /*
          * 直连用的 song.id 不一定真是网易云可用的 songId
          * (下载/换源/历史等入口可能只带占位 id), 表现为"添加失败"。
          * 这里按歌名+歌手在网易云重新搜一次, 用搜到的真实 id 再试一遍。
          */
         NPLogger.w(
             TAG,
-            "网易云直连加歌失败(code=${first.code}), 尝试按歌名搜索真实 songId: " +
+            "网易云直连加歌未写入(${first.detail.orEmpty()}), 尝试按歌名搜索真实 songId: " +
                 "song=${song.name}, artist=${song.artist}, id=$songId"
         )
         val searched = searchOnPlatform(AddToPlaylistPlatform.NETEASE, song)
