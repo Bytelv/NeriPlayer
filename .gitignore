@@ -54,3 +54,6 @@ AGENTS.md
 # JVM crash dumps from interrupted debug builds
 hs_err_pid*.log
 replay_pid*.log
+
+# hidden-api 是顶层模块, 上面的 /build 与 /modules/**/build/ 都覆盖不到它
+/hidden-api/build/

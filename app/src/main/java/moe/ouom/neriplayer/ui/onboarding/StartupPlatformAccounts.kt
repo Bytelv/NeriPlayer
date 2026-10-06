@@ -43,6 +43,7 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.auth.loadNeteaseAccountProfile
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.loadYouTubeAccountProfile
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.rememberSettingsAccountProfile
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
+import moe.ouom.neriplayer.ui.screen.tab.settings.component.kugou.KugouSettingsSection
 import moe.ouom.neriplayer.ui.screen.tab.settings.state.formatSyncTime
 import moe.ouom.neriplayer.ui.viewmodel.auth.BiliAuthUiState
 import moe.ouom.neriplayer.ui.viewmodel.auth.YouTubeAuthUiState
@@ -195,6 +196,7 @@ internal fun StartupPlatformAccountsContent(
             suppressInactiveNavigationSurface = true,
             fallbackColor = MaterialTheme.colorScheme.surfaceContainer
         )
+        KugouSettingsSection()
         Spacer(Modifier.height(18.dp))
         HintCard(body = stringResource(CoreCommonR.string.onboarding_platforms_hint))
     }

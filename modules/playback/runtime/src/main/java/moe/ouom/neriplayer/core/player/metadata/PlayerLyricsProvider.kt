@@ -1178,24 +1178,6 @@ object PlayerLyricsProvider {
                 return@withContext emptyList()
             }
 
-            if (song.album.startsWith(biliSourceTag)) {
-                return@withContext when (song.matchedLyricSource) {
-                    MusicPlatform.CLOUD_MUSIC -> {
-                        val matchedId = song.matchedSongId?.toLongOrNull()
-                        if (matchedId != null) {
-                            getNeteaseRomanizedLyrics(
-                                matchedId,
-                                neteaseClient,
-                                neteaseLyricsCache
-                            )
-                        } else {
-                            emptyList()
-                        }
-                    }
-                    else -> emptyList()
-                }
-            }
-
             when (song.matchedLyricSource) {
                 null,
                 MusicPlatform.CLOUD_MUSIC -> getNeteaseRomanizedLyrics(

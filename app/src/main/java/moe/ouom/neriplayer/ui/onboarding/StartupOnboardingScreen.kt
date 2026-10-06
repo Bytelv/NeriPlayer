@@ -110,7 +110,6 @@ import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsBiliAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsNeteaseAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.auth.SettingsYouTubeAuthDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.kugou.KugouAuthSheet
-import moe.ouom.neriplayer.ui.screen.tab.settings.component.InlineMessage
 import moe.ouom.neriplayer.ui.screen.tab.settings.component.ThemeModeActionButton
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsGitHubDialogs
 import moe.ouom.neriplayer.ui.screen.tab.settings.dialog.SettingsWebDavDialogs
@@ -1356,103 +1355,6 @@ private fun LanguageContent(
         )
         Spacer(Modifier.height(12.dp))
     }
-}
-
-@Composable
-private fun PlatformContent(
-    inlineMessage: String?,
-    onInlineMessageChange: (String?) -> Unit,
-    biliState: SavedCookieAuthState,
-    hasSavedBiliCookies: Boolean,
-    neteaseState: SavedCookieAuthState,
-    hasSavedNeteaseCookies: Boolean,
-    youTubeState: YouTubeAuthState,
-    hasSavedYouTubeAuth: Boolean,
-    kugouConnected: Boolean,
-    kugouDisplayName: String,
-    onOpenBili: () -> Unit,
-    onManageBili: () -> Unit,
-    onOpenNetease: () -> Unit,
-    onManageNetease: () -> Unit,
-    onOpenYouTube: () -> Unit,
-    onManageYouTube: () -> Unit,
-    onOpenKugou: () -> Unit
-) {
-    StepHeader(
-        icon = Icons.Outlined.Tune,
-        title = stringResource(CoreCommonR.string.onboarding_platforms_title),
-        description = stringResource(CoreCommonR.string.onboarding_platforms_desc)
-    )
-    Spacer(Modifier.height(18.dp))
-    inlineMessage?.let {
-        InlineMessage(text = it, onClose = { onInlineMessageChange(null) })
-        Spacer(Modifier.height(14.dp))
-    }
-    PlatformCard(
-        icon = painterResource(CoreCommonR.drawable.ic_bilibili),
-        title = stringResource(CoreCommonR.string.platform_bilibili),
-        status = statusTextForSavedCookie(biliState),
-        connected = biliState == SavedCookieAuthState.Valid,
-        actionText = if (hasSavedBiliCookies) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
-        } else if (biliState == SavedCookieAuthState.Valid) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_logout)
-        } else {
-            stringResource(CoreCommonR.string.onboarding_platform_action_connect)
-        },
-        onClick = if (hasSavedBiliCookies) onManageBili else onOpenBili
-    )
-    Spacer(Modifier.height(12.dp))
-    PlatformCard(
-        icon = painterResource(CoreCommonR.drawable.ic_netease_cloud_music),
-        title = stringResource(CoreCommonR.string.platform_netease),
-        status = statusTextForSavedCookie(neteaseState),
-        connected = neteaseState == SavedCookieAuthState.Valid,
-        actionText = if (hasSavedNeteaseCookies) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
-        } else if (neteaseState == SavedCookieAuthState.Valid) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_logout)
-        } else {
-            stringResource(CoreCommonR.string.onboarding_platform_action_connect)
-        },
-        onClick = if (hasSavedNeteaseCookies) onManageNetease else onOpenNetease
-    )
-    Spacer(Modifier.height(12.dp))
-    PlatformCard(
-        icon = painterResource(CoreCommonR.drawable.ic_youtube),
-        title = stringResource(CoreCommonR.string.common_youtube),
-        status = statusTextForYouTube(youTubeState),
-        connected = youTubeState == YouTubeAuthState.Valid,
-        actionText = if (hasSavedYouTubeAuth) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
-        } else if (youTubeState == YouTubeAuthState.Valid) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_logout)
-        } else {
-            stringResource(CoreCommonR.string.onboarding_platform_action_connect)
-        },
-        onClick = if (hasSavedYouTubeAuth) onManageYouTube else onOpenYouTube
-    )
-    Spacer(Modifier.height(12.dp))
-    PlatformCard(
-        // PlatformCard 会统一 tint(见其中的 Icon(tint = colors.onSurface)),
-        // 因此这里必须用单色 K 字形; 官方黑底白 K 的双色图标被染色后两层会同色
-        icon = painterResource(CoreCommonR.drawable.ic_kugou_mono),
-        title = stringResource(CoreCommonR.string.platform_kugou),
-        status = if (kugouConnected) {
-            stringResource(CoreCommonR.string.settings_kugou_status_logged_in, kugouDisplayName)
-        } else {
-            stringResource(CoreCommonR.string.settings_kugou_status_missing)
-        },
-        connected = kugouConnected,
-        actionText = if (kugouConnected) {
-            stringResource(CoreCommonR.string.onboarding_platform_action_manage)
-        } else {
-            stringResource(CoreCommonR.string.onboarding_platform_action_connect)
-        },
-        onClick = onOpenKugou
-    )
-    Spacer(Modifier.height(12.dp))
-    HintCard(body = stringResource(CoreCommonR.string.onboarding_platforms_hint))
 }
 
 @Composable
