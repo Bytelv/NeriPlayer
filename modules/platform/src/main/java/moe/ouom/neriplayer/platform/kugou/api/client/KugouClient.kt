@@ -68,6 +68,14 @@ class KugouClient(
      */
     private val _sessionUpdates = java.util.concurrent.ConcurrentLinkedQueue<String>()
 
+    /**
+     * 读取当前会话
+     *
+     * 写接口(加歌到歌单)需要把 `userid`/`token` 一并放进请求体与查询串, 与官方
+     * 服务端实现一致, 因此仓库层要能取到会话。
+     */
+    fun currentSession(): KugouAuthSession = sessionProvider.currentSession()
+
     fun drainRotatedSessionIds(): List<String> {
         val updates = mutableListOf<String>()
         while (true) {

@@ -186,16 +186,22 @@ class KugouPlaylistRepository(private val client: KugouClient) {
     /**
      * 把歌曲加入酷狗歌单
      *
-     * 实测该后端与官方文档**不一致**, 契约以实测为准:
-     * - `POST /playlist/tracks/add`(GET 得到 405), `Content-Type: application/json`,
-     *   body 非空(空 body 回 "A non-empty request body is required.")
-     * - body 为 `{"listid": "<字符串>", "songs": [ {...} ]}`
-     *   - `listid` 必须是**字符串**; 数字会回 "could not be converted to System.String"
-     *   - 歌曲列表字段名是 **`songs`**, 且元素是**对象**而非字符串
-     *     (字符串数组会回 "could not be converted to ...")
-     *   - 文档写的查询串 `listid` + `data` 会被回 "ListId 不能为空"
+     * 契约以官方服务端实现为准 (`module/playlist_tracks_add.js`), 它把请求转发到
+     * 酷狗真实的 `/cloudlist.service/v6/add_song`:
      *
-     * 元素对象至少要有 `hash` (FileHash); `name` 一并带上。
+     * ```
+     * POST /playlist/tracks/add?last_time=<秒级时间戳>&last_area=gztx&userid=..&token=..
+     * body = {
+     *   userid, token, listid, list_ver: 0, type: 0,
+     *   slow_upload: 1, scene: "false;null",
+     *   data: "歌名|hash|album_id|mixsongid[,歌名|hash|...]"
+     * }
+     * ```
+     *
+     * 早先只发 `{"listid":.., "songs":[{hash,name}]}`: 字段名不对(`data` 而非 `songs`),
+     * 且缺 `userid`/`token`/`list_ver`/`slow_upload`/`scene` 与全部查询参数。服务端
+     * 因此**回了 status=1 却什么都没写**, 响应里回显的 hash 是一个数字 id 而不是我们
+     * 发的 32 位 FileHash —— 表现为"提示添加成功但歌单里没有这首歌"。
      *
      * @return 成功的首数; 无可用条目或失败返回 0
      */
@@ -206,18 +212,34 @@ class KugouPlaylistRepository(private val client: KugouClient) {
         val normalizedListId = listId.trim()
         if (normalizedListId.isEmpty()) return@withContext 0
 
-        val songObjects = buildTracksAddSongs(songs)
-        if (songObjects.length() == 0) {
+        val dataPayload = buildTracksAddData(songs)
+        if (dataPayload.isEmpty()) {
             NPLogger.w(TAG, "酷狗加歌到歌单: 无可用的 hash, 已跳过")
             return@withContext 0
         }
 
+        val session = client.currentSession()
+        val userId = session.userId.trim()
+        val token = session.token.trim()
+
         try {
             val json = client.postJsonBody(
                 path = TRACKS_ADD_PATH,
+                query = mapOf(
+                    "last_time" to (System.currentTimeMillis() / 1000L).toString(),
+                    "last_area" to "gztx",
+                    "userid" to userId,
+                    "token" to token
+                ),
                 body = JSONObject()
+                    .put("userid", userId)
+                    .put("token", token)
                     .put("listid", normalizedListId)
-                    .put("songs", songObjects)
+                    .put("list_ver", 0)
+                    .put("type", 0)
+                    .put("slow_upload", 1)
+                    .put("scene", "false;null")
+                    .put("data", dataPayload)
             )
             if (json == null) {
                 NPLogger.w(TAG, "酷狗加歌到歌单: 服务端返回空响应, listid=$normalizedListId")
@@ -338,24 +360,31 @@ class KugouPlaylistRepository(private val client: KugouClient) {
     }
 
     /**
-     * 构造 `songs` 数组
+     * 构造官方契约里的 `data` 参数
      *
-     * 实测元素会被反序列化成对象(字符串数组直接类型错误), `hash` 是必需项。
-     * 顺带带上 `name`, 与文档"最少需要 歌曲名 + hash"的意图一致。
+     * 官方服务端按 `params.data.split(',')` 再 `split('|')` 取值, 顺序固定为
+     * `歌曲名|hash|album_id|mixsongid`:
+     *
+     * ```javascript
+     * name: data[0], hash: data[1],
+     * album_id: Number(data[2] || 0), mixsongid: Number(data[3] || 0)
+     * ```
+     *
+     * 因此这里必须按该顺序拼接; 缺的字段留空, 由服务端兜成 0。
+     * 歌名里的 `,`/`|` 会破坏分隔, 统一替换成空格。
      */
-    internal fun buildTracksAddSongs(songs: List<KugouSong>): JSONArray {
-        val result = JSONArray()
+    internal fun buildTracksAddData(songs: List<KugouSong>): String {
         val seen = mutableSetOf<String>()
-        songs.forEach { song ->
+        return songs.mapNotNull { song ->
             val hash = song.hash.trim()
-            if (hash.isEmpty() || !seen.add(hash)) return@forEach
-            result.put(
-                JSONObject()
-                    .put("hash", hash)
-                    .put("name", song.title.trim())
-            )
-        }
-        return result
+            if (hash.isEmpty() || !seen.add(hash)) return@mapNotNull null
+            val name = song.title.trim()
+                .replace(',', ' ')
+                .replace('|', ' ')
+            val albumId = song.albumId?.trim().orEmpty()
+            // 没有 mixsongid 时留空: 服务端 Number('' || 0) => 0
+            "${name}|${hash}|${albumId}|"
+        }.joinToString(",")
     }
 
     private fun trackQuery(
@@ -565,13 +594,8 @@ class KugouPlaylistRepository(private val client: KugouClient) {
         internal fun shouldFallbackToUserTrackEndpointForTest(error: KugouApiException): Boolean =
             KugouPlaylistRepository(UNUSED_CLIENT).shouldFallbackToUserTrackEndpoint(error)
 
-        internal fun buildTracksAddPayloadForTest(
-            listId: String,
-            songs: List<KugouSong>
-        ): String = JSONObject()
-            .put("listid", listId)
-            .put("songs", KugouPlaylistRepository(UNUSED_CLIENT).buildTracksAddSongs(songs))
-            .toString()
+        internal fun buildTracksAddDataForTest(songs: List<KugouSong>): String =
+            KugouPlaylistRepository(UNUSED_CLIENT).buildTracksAddData(songs)
 
         /** 解析函数不会触碰网络, 占位实例的创建延迟到真正调用时 */
         private val UNUSED_CLIENT: KugouClient by lazy {

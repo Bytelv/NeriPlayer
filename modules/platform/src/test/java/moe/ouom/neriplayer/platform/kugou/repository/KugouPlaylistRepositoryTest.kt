@@ -471,144 +471,115 @@ class KugouPlaylistRepositoryTest {
     )
 
     /**
-     * 写歌单的 body 契约是 `{"listid": "...", "songs": [{"hash":..., "name":...}]}`
+     * 写歌单的 `data` 契约是官方服务端的管道分隔格式
      *
-     * 以实测为准(该后端与官方文档不一致): 文档写的查询串 `listid` + `data` 会被回
-     * "ListId 不能为空"; `listid` 必须是字符串、歌曲列表字段是 `songs` 且元素是对象。
+     * 官方 `playlist_tracks_add.js` 按 `split(',')` 再 `split('|')` 取值, 顺序固定:
+     * `name | hash | album_id | mixsongid`。顺序错位会导致 hash 与 album_id 互换,
+     * 服务端仍回 status=1 却写不进正确的歌 —— 真机上表现为"提示成功但歌单里没有"。
      */
     @Test
-    fun `tracks add payload builds listid and songs array`() {
-        val payload = KugouPlaylistRepository.buildTracksAddPayloadForTest(
-            listId = "2",
-            songs = listOf(kugouSong("8E10D8825DDE03BCABBDE13E5A4150D2", "我们应该算爱过吧"))
+    fun `tracks add data uses official pipe order`() {
+        val data = KugouPlaylistRepository.buildTracksAddDataForTest(
+            listOf(kugouSong("8E10D8825DDE03BCABBDE13E5A4150D2", "我们应该算爱过吧"))
         )
-        val json = JSONObject(payload)
 
-        // listid 必须是字符串: 数字会回 "could not be converted to System.String"
-        assertEquals("2", json.getString("listid"))
-        val songs = json.getJSONArray("songs")
-        assertEquals(1, songs.length())
-        assertEquals("8E10D8825DDE03BCABBDE13E5A4150D2", songs.getJSONObject(0).getString("hash"))
-        assertEquals("我们应该算爱过吧", songs.getJSONObject(0).getString("name"))
+        assertEquals("我们应该算爱过吧|8E10D8825DDE03BCABBDE13E5A4150D2||", data)
     }
 
+    /** 多首用逗号分隔, 顺序保持不变 */
     @Test
-    fun `tracks add payload keeps every song in the array`() {
-        val json = JSONObject(
-            KugouPlaylistRepository.buildTracksAddPayloadForTest(
-                listId = "2",
-                songs = listOf(
-                    kugouSong("AAA", "first"),
-                    kugouSong("BBB", "second")
-                )
+    fun `tracks add data joins multiple songs with comma`() {
+        val data = KugouPlaylistRepository.buildTracksAddDataForTest(
+            listOf(
+                kugouSong("AAA", "first"),
+                kugouSong("BBB", "second")
             )
         )
 
-        val songs = json.getJSONArray("songs")
-        assertEquals(2, songs.length())
-        assertEquals("AAA", songs.getJSONObject(0).getString("hash"))
-        assertEquals("BBB", songs.getJSONObject(1).getString("hash"))
+        assertEquals("first|AAA||,second|BBB||", data)
     }
 
-    /** JSON 序列化会自行转义, 标题里的分隔符不再需要清洗 */
+    /** 歌名里的分隔符会破坏 pipe/csv 解析, 必须清洗掉 */
     @Test
-    fun `tracks add payload keeps delimiter characters in the title`() {
-        val json = JSONObject(
-            KugouPlaylistRepository.buildTracksAddPayloadForTest(
-                listId = "2",
-                songs = listOf(kugouSong("AAA", "bad,title|here"))
-            )
+    fun `tracks add data strips delimiter characters from the title`() {
+        val data = KugouPlaylistRepository.buildTracksAddDataForTest(
+            listOf(kugouSong("AAA", "bad,title|here"))
         )
 
-        assertEquals(
-            "bad,title|here",
-            json.getJSONArray("songs").getJSONObject(0).getString("name")
-        )
+        assertEquals("bad title here|AAA||", data)
     }
 
     /** `hash` 是必需项, 缺它的条目必须被丢弃而不是发出无效请求 */
     @Test
-    fun `tracks add payload drops entries without hash`() {
-        val json = JSONObject(
-            KugouPlaylistRepository.buildTracksAddPayloadForTest(
-                listId = "2",
-                songs = listOf(
-                    kugouSong("", "no hash"),
-                    kugouSong("BBB", "   "),
-                    kugouSong("CCC", "valid")
-                )
+    fun `tracks add data drops entries without hash`() {
+        val data = KugouPlaylistRepository.buildTracksAddDataForTest(
+            listOf(
+                kugouSong("", "no hash"),
+                kugouSong("BBB", "   "),
+                kugouSong("CCC", "valid")
             )
         )
 
-        val songs = json.getJSONArray("songs")
-        assertEquals(2, songs.length())
-        assertEquals("BBB", songs.getJSONObject(0).getString("hash"))
-        assertEquals("CCC", songs.getJSONObject(1).getString("hash"))
+        assertEquals("|BBB||,valid|CCC||", data)
     }
 
     @Test
-    fun `tracks add payload has no songs when nothing usable`() {
+    fun `tracks add data is empty when nothing usable`() {
         assertEquals(
-            0,
-            JSONObject(
-                KugouPlaylistRepository.buildTracksAddPayloadForTest(
-                    listId = "2",
-                    songs = emptyList()
-                )
-            ).getJSONArray("songs").length()
+            "",
+            KugouPlaylistRepository.buildTracksAddDataForTest(emptyList())
         )
         assertEquals(
-            0,
-            JSONObject(
-                KugouPlaylistRepository.buildTracksAddPayloadForTest(
-                    listId = "2",
-                    songs = listOf(kugouSong("", ""))
-                )
-            ).getJSONArray("songs").length()
+            "",
+            KugouPlaylistRepository.buildTracksAddDataForTest(listOf(kugouSong("", "")))
         )
     }
 
     /** 同一首歌重复提交没有意义, 按 hash 去重后只发一次 */
     @Test
-    fun `tracks add payload deduplicates by hash`() {
-        val json = JSONObject(
-            KugouPlaylistRepository.buildTracksAddPayloadForTest(
-                listId = "2",
-                songs = listOf(
-                    kugouSong("AAA", "same"),
-                    kugouSong("AAA", "same again")
-                )
+    fun `tracks add data deduplicates by hash`() {
+        val data = KugouPlaylistRepository.buildTracksAddDataForTest(
+            listOf(
+                kugouSong("AAA", "same"),
+                kugouSong("AAA", "same again")
             )
         )
 
-        assertEquals(1, json.getJSONArray("songs").length())
+        assertEquals("same|AAA||", data)
+    }
+
+    /** 有专辑 id 时按官方顺序放在第 3 段 */
+    @Test
+    fun `tracks add data carries album id in the third segment`() {
+        val withAlbum = KugouSong(
+            id = "1",
+            hash = "AAA",
+            title = "song",
+            artist = "artist",
+            albumId = "58271602"
+        )
+        val data = KugouPlaylistRepository.buildTracksAddDataForTest(listOf(withAlbum))
+
+        assertEquals("song|AAA|58271602|", data)
     }
 
     /**
      * 跨平台加歌时, 条目的 hash 来自搜索结果 (`SongSearchInfo.id` = FileHash)
      *
      * app 层用 `KugouSong(id = hash, hash = hash, title = 歌名)` 构造, 这里锁住
-     * 这种形态依然能产出合法的 songs 条目。
+     * 这种形态依然能产出合法的 data 片段。
      */
     @Test
-    fun `tracks add payload accepts a search matched song`() {
+    fun `tracks add data accepts a search matched song`() {
         val matched = KugouSong(
             id = "8E10D8825DDE03BCABBDE13E5A4150D2",
             hash = "8E10D8825DDE03BCABBDE13E5A4150D2",
             title = "我们应该算爱过吧",
             artist = "郑润泽"
         )
-        val json = JSONObject(
-            KugouPlaylistRepository.buildTracksAddPayloadForTest(
-                listId = "2",
-                songs = listOf(matched)
-            )
-        )
+        val data = KugouPlaylistRepository.buildTracksAddDataForTest(listOf(matched))
 
-        assertEquals(
-            "8E10D8825DDE03BCABBDE13E5A4150D2",
-            json.getJSONArray("songs").getJSONObject(0).getString("hash")
-        )
+        assertEquals("我们应该算爱过吧|8E10D8825DDE03BCABBDE13E5A4150D2||", data)
     }
 
     /**
