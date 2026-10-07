@@ -44,7 +44,16 @@ data class AddToPlaylistSong(
     /** 歌曲本身就是酷狗来源 */
     val isKugouSource: Boolean = false,
     /** 仅当 [isKugouSource] 时有意义 (`SongItem.audioId` = FileHash) */
-    val kugouHash: String = ""
+    val kugouHash: String = "",
+    /**
+     * 酷狗写歌单要用的专辑 id (`SongItem.subAudioId`)
+     *
+     * 该接口的 `songs` 元素需要 `hash`/`name`/`album_id`/`mixsongid`, 缺项时
+     * 上游会回"歌曲列表不能为空", 所以能带上就带上。
+     */
+    val kugouAlbumId: String = "",
+    /** 酷狗写歌单要用的 mixsongid (`SongItem.playlistContextId`) */
+    val kugouMixSongId: String = ""
 )
 
 /**
@@ -78,11 +87,16 @@ enum class AddToPlaylistFailure {
 sealed interface AddToPlaylistResolution {
     data class NeteaseSongId(val songId: Long) : AddToPlaylistResolution
 
-    /** [title] / [artist] 是写歌单 payload 要用的那一份, 可能来自搜索命中的候选 */
+    /**
+     * [title] / [artist] / [albumId] / [mixSongId] 是写歌单 payload 要用的那一份,
+     * 可能来自搜索命中的候选
+     */
     data class KugouHash(
         val hash: String,
         val title: String = "",
-        val artist: String = ""
+        val artist: String = "",
+        val albumId: String = "",
+        val mixSongId: String = ""
     ) : AddToPlaylistResolution
 
     data class NeedsPlatformSearch(val platform: AddToPlaylistPlatform) : AddToPlaylistResolution
@@ -188,7 +202,9 @@ fun planAddToRemotePlaylist(
             knownKugouHash != null -> AddToPlaylistResolution.KugouHash(
                 hash = knownKugouHash,
                 title = song.name,
-                artist = song.artist
+                artist = song.artist,
+                albumId = song.kugouAlbumId.trim(),
+                mixSongId = song.kugouMixSongId.trim()
             )
             // 明确是酷狗来源却没有合法 hash: 报明确原因, 不要退化成搜索
             song.isKugouSource ->
@@ -249,12 +265,14 @@ fun resolveSearchedCandidate(
 
         AddToPlaylistPlatform.KUGOU -> candidate.id
             .trim()
-            .takeIf { it.isNotEmpty() }
+            .takeIf { looksLikeKugouFileHash(it) }
             ?.let {
                 AddToPlaylistResolution.KugouHash(
                     hash = it,
                     title = candidate.songName.trim(),
-                    artist = candidate.singer.trim()
+                    artist = candidate.singer.trim(),
+                    albumId = candidate.albumId.orEmpty().trim(),
+                    mixSongId = candidate.mixSongId.orEmpty().trim()
                 )
             }
             ?: AddToPlaylistResolution.Failed(AddToPlaylistFailure.MISSING_KUGOU_HASH)
@@ -264,12 +282,20 @@ fun resolveSearchedCandidate(
 /**
  * 酷狗写歌单条目
  *
- * `/playlist/tracks/add` 的 `data` 最少需要 `歌曲名|hash`, 因此 hash 同时充当
- * `id` 与 `hash` 字段 (酷狗侧 `id` 是 album_audio_id, 这里没有就不编造)。
+ * 该接口的 `songs` 元素需要 `hash`/`name`/`album_id`/`mixsongid` 四项。
+ * `KugouSong.id` 承载 `mixsongid`、`albumId` 承载 `album_id`; 拿不到时留空,
+ * **不要用 hash 去顶替 mixsongid** —— 上游会因此找不到歌曲。
  */
-fun buildKugouPlaylistAddSong(title: String, artist: String, hash: String): KugouSong = KugouSong(
-    id = hash,
+fun buildKugouPlaylistAddSong(
+    title: String,
+    artist: String,
+    hash: String,
+    albumId: String = "",
+    mixSongId: String = ""
+): KugouSong = KugouSong(
+    id = mixSongId,
     hash = hash,
     title = title,
-    artist = artist
+    artist = artist,
+    albumId = albumId.takeIf { it.isNotBlank() }
 )

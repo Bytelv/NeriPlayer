@@ -70,7 +70,10 @@ class KugouSearchApi(
                         duration = formatDuration(song.durationMs),
                         source = MusicPlatform.KUGOU,
                         albumName = song.albumName,
-                        coverUrl = song.coverUrl
+                        coverUrl = song.coverUrl,
+                        // 写歌单要用; 该后端要求 mixsongid 是字符串
+                        albumId = song.albumId,
+                        mixSongId = song.id
                     )
                 }
             } catch (error: CancellationException) {

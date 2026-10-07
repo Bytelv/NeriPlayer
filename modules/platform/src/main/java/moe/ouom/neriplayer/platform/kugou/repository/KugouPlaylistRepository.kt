@@ -239,7 +239,10 @@ class KugouPlaylistRepository(private val client: KugouClient) {
                     "last_time" to (System.currentTimeMillis() / 1000L).toString(),
                     "last_area" to "gztx",
                     "userid" to userId,
-                    "token" to token
+                    "token" to token,
+                    // 官方服务端把上游的 `data` 作为查询参数转发(管道串); 这里一并
+                    // 带上, 以免该后端是从查询串取它 —— 实测 body 里的 `data` 不被识别
+                    "data" to buildTracksAddPipeData(songs)
                 ),
                 body = JSONObject()
                     .put("userid", userId)
@@ -249,7 +252,7 @@ class KugouPlaylistRepository(private val client: KugouClient) {
                     .put("type", 0)
                     .put("slow_upload", 1)
                     .put("scene", "false;null")
-                    .put("data", dataPayload)
+                    .put("songs", dataPayload)
             )
             if (json == null) {
                 NPLogger.w(TAG, "酷狗加歌到歌单: 服务端返回空响应, listid=$normalizedListId")
@@ -398,14 +401,36 @@ class KugouPlaylistRepository(private val client: KugouClient) {
     }
 
     /**
+     * 上游 `data` 的管道格式: `歌名|hash|album_id|mixsongid`, 多首用逗号分隔
+     *
+     * 官方 `playlist_tracks_add.js` 就是这么拼给酷狗 `/cloudlist.service/v6/add_song`
+     * 的。该后端**自身入参**用的是 `songs` 对象数组, 但 body 里的 `data` 不被识别;
+     * 这里把管道串同时挂到查询参数上, 兼容"它从查询串取 data"的实现。
+     *
+     * 歌名里的 `,`/`|` 会破坏分隔, 统一替换成空格。
+     */
+    internal fun buildTracksAddPipeData(songs: List<KugouSong>): String {
+        val seen = mutableSetOf<String>()
+        return songs.mapNotNull { song ->
+            val hash = song.hash.trim()
+            if (hash.isEmpty() || !seen.add(hash)) return@mapNotNull null
+            val name = song.title.trim().replace(',', ' ').replace('|', ' ')
+            "${name}|${hash}|${song.albumId?.trim().orEmpty()}|${song.id.trim()}"
+        }.joinToString(",")
+    }
+
+    /**
      * 构造 `songs` 数组
      *
-     * **字段名以实测为准**: 该后端读的是 `songs`(对象数组)。曾误按官方
-     * `playlist_tracks_add.js` 的 `data`(管道分隔字符串) 改写, 结果服务端直接回
-     * `40005 歌曲列表不能为空` —— 因为 `data` 是它**转发给酷狗上游**时用的格式,
+     * **字段名以实测为准**: 该后端读的是 `songs`(对象数组), `listid` 同样在 body 里。
+     * 曾误按官方 `playlist_tracks_add.js` 的 `data`(管道分隔字符串) 改写, 结果服务端
+     * 直接回 `40005 歌曲列表不能为空` —— `data` 是它**转发给酷狗上游**时用的格式,
      * 不是它自己的入参格式。
      *
-     * 元素带上 `hash` 与 `name` (官方上游同样需要这两项), 有专辑 id 时一并带上。
+     * 元素需要 `hash`/`name`/`album_id`/`mixsongid` 四项:
+     * - 实测该后端要求 `mixsongid` 是**字符串**(传数字会回类型错)
+     * - 缺项时上游回"歌曲列表不能为空", 因此能带上就带上
+     * - 不要用 hash 顶替 `mixsongid`, 否则上游找不到歌曲
      */
     internal fun buildTracksAddSongs(songs: List<KugouSong>): JSONArray {
         val result = JSONArray()
@@ -418,6 +443,7 @@ class KugouPlaylistRepository(private val client: KugouClient) {
                     .put("hash", hash)
                     .put("name", song.title.trim())
                     .put("album_id", song.albumId?.trim().orEmpty())
+                    .put("mixsongid", song.id.trim())
             )
         }
         return result

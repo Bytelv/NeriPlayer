@@ -603,7 +603,10 @@ internal fun SongItem.toAddToPlaylistSong(): AddToPlaylistSong = AddToPlaylistSo
     isNeteaseSource = isNeteaseSourceSong(),
     neteaseSongId = id,
     isKugouSource = PlayerManager.isKugouTrack(this),
-    kugouHash = audioId.orEmpty()
+    kugouHash = audioId.orEmpty(),
+    // 酷狗歌曲把专辑 id 放在 subAudioId; mixsongid 暂无处存放(见下)
+    kugouAlbumId = subAudioId.orEmpty(),
+    kugouMixSongId = ""
 )
 
 private fun SongItem.isNeteaseSourceSong(): Boolean =

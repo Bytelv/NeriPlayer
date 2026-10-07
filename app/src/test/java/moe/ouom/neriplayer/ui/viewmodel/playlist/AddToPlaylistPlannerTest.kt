@@ -471,17 +471,38 @@ class AddToPlaylistPlannerTest {
 
     // ---------------------------------------------------------------- 酷狗写歌单条目
 
+    /**
+     * `id` 承载 `mixsongid`, **不能**再用 hash 顶替
+     *
+     * 实测该后端要求 `mixsongid` 是字符串; 早先用 hash 顶替会让上游找不到歌曲。
+     */
     @Test
-    fun `kugou add song carries the hash in both hash and id fields`() {
+    fun `kugou add song keeps hash and mixsongid separate`() {
         val kugouSong = buildKugouPlaylistAddSong(
             title = "我们应该算爱过吧",
             artist = "郑润泽",
-            hash = "8E10D8825DDE03BCABBDE13E5A4150D2"
+            hash = "8E10D8825DDE03BCABBDE13E5A4150D2",
+            albumId = "12739065",
+            mixSongId = "122505983"
         )
 
         assertEquals("8E10D8825DDE03BCABBDE13E5A4150D2", kugouSong.hash)
-        assertEquals("8E10D8825DDE03BCABBDE13E5A4150D2", kugouSong.id)
+        assertEquals("122505983", kugouSong.id)
+        assertEquals("12739065", kugouSong.albumId)
         assertEquals("我们应该算爱过吧", kugouSong.title)
         assertEquals("郑润泽", kugouSong.artist)
+    }
+
+    /** 拿不到 mixsongid / album 时留空, 不要编造 */
+    @Test
+    fun `kugou add song leaves unknown album and mixsongid empty`() {
+        val kugouSong = buildKugouPlaylistAddSong(
+            title = "song",
+            artist = "artist",
+            hash = "8E10D8825DDE03BCABBDE13E5A4150D2"
+        )
+
+        assertEquals("", kugouSong.id)
+        assertNull(kugouSong.albumId)
     }
 }
