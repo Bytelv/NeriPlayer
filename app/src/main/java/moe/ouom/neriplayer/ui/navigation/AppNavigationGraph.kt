@@ -25,6 +25,7 @@ import moe.ouom.neriplayer.ui.screen.history.RecentScreen
 import moe.ouom.neriplayer.ui.screen.history.stats.PlaybackStatsScreen
 import moe.ouom.neriplayer.ui.screen.debug.BiliApiProbeScreen
 import moe.ouom.neriplayer.ui.screen.debug.CrashLogListScreen
+import moe.ouom.neriplayer.ui.screen.debug.KugouLogScreen
 import moe.ouom.neriplayer.ui.screen.debug.ListenTogetherDebugScreen
 import moe.ouom.neriplayer.ui.screen.debug.LogListScreen
 import moe.ouom.neriplayer.ui.screen.debug.NeteaseApiProbeScreen
@@ -877,6 +878,26 @@ private fun NavGraphBuilder.registerDebugToolRoutes(
     ) {
         renderScene(Destinations.DebugSearch.route) {
             SearchApiProbeScreen()
+        }
+    }
+
+    composable(
+        route = Destinations.DebugKugouLogs.route,
+        enterTransition = {
+            debugNavigationEnterTransition(coherentFeedbackEnabled)
+        },
+        exitTransition = {
+            debugNavigationExitTransition(coherentFeedbackEnabled)
+        },
+        popEnterTransition = {
+            debugNavigationEnterTransition(coherentFeedbackEnabled)
+        },
+        popExitTransition = {
+            debugNavigationExitTransition(coherentFeedbackEnabled)
+        }
+    ) {
+        renderScene(Destinations.DebugKugouLogs.route) {
+            KugouLogScreen(onBack = { navController.popBackStack() })
         }
     }
 

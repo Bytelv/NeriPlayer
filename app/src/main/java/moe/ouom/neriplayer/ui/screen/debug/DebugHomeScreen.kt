@@ -115,6 +115,7 @@ fun DebugHomeScreen(
     onOpenNeteaseDebug: () -> Unit,
     onOpenSearchDebug: () -> Unit,
     onOpenLogs: () -> Unit,
+    onOpenKugouLogs: () -> Unit,
     onOpenCrashLogs: () -> Unit,
     onHideDebugMode: () -> Unit,
     onTestExceptionHandler: (DebugCrashTestType) -> Unit = {},
@@ -309,6 +310,23 @@ fun DebugHomeScreen(
                     headlineContent = { Text(stringResource(CoreCommonR.string.debug_view_logs)) },
                     supportingContent = { Text(stringResource(CoreCommonR.string.debug_view_logs_desc)) },
                     modifier = Modifier.clickable(onClick = onOpenLogs),
+                    colors = ListItemDefaults.colors(
+                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
+                    )
+                )
+
+                ListItem(
+                    leadingContent = {
+                        Icon(
+                            imageVector = Icons.Outlined.Description,
+                            contentDescription = stringResource(CoreCommonR.string.settings_kugou_log_title),
+                            tint = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.size(24.dp),
+                        )
+                    },
+                    headlineContent = { Text(stringResource(CoreCommonR.string.settings_kugou_log_title)) },
+                    supportingContent = { Text(stringResource(CoreCommonR.string.settings_kugou_log_desc)) },
+                    modifier = Modifier.clickable(onClick = onOpenKugouLogs),
                     colors = ListItemDefaults.colors(
                         containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
                     )

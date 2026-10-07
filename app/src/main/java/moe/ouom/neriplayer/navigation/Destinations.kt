@@ -53,6 +53,10 @@ sealed class Destinations(val route: String, val labelResId: Int) {
     data object DebugNetease : Destinations("debug/netease", moe.ouom.neriplayer.common.R.string.debug_netease_api)
     data object DebugSearch : Destinations("debug/search", moe.ouom.neriplayer.common.R.string.debug_search_api)
     data object DebugLogsList : Destinations("debug_logs_list", moe.ouom.neriplayer.common.R.string.log_list)
+    data object DebugKugouLogs : Destinations(
+        "debug_kugou_logs",
+        moe.ouom.neriplayer.common.R.string.settings_kugou_log_title
+    )
     data object DebugCrashLogsList : Destinations("debug_crash_logs_list", moe.ouom.neriplayer.common.R.string.log_list)
 
     // 网易云歌单详情路由

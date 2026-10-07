@@ -1683,6 +1683,9 @@ private fun NeriAppContent(
                             onOpenLogs = {
                                 navController.navigate(Destinations.DebugLogsList.route)
                             },
+                            onOpenKugouLogs = {
+                                navController.navigate(Destinations.DebugKugouLogs.route)
+                            },
                             onOpenCrashLogs = {
                                 navController.navigate(Destinations.DebugCrashLogsList.route)
                             },

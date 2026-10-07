@@ -81,7 +81,6 @@ internal fun KugouSettingsSection(
     val state by vm.uiState.collectAsStateWithLifecycleCompat()
     var showLoginSheet by rememberSaveable { mutableStateOf(false) }
     var showBaseUrlDialog by rememberSaveable { mutableStateOf(false) }
-    var showLogDialog by rememberSaveable { mutableStateOf(false) }
     var showLogoutDialog by rememberSaveable { mutableStateOf(false) }
     var inlineMsg by remember { mutableStateOf<String?>(null) }
     val latestShowLoginSheet by rememberUpdatedState(showLoginSheet)
@@ -131,7 +130,6 @@ internal fun KugouSettingsSection(
             state = state,
             onOpenDialog = { showBaseUrlDialog = true }
         )
-        KugouLogListItem(onOpenDialog = { showLogDialog = true })
         KugouVipListItem(
             state = state,
             onClaim = vm::claimDailyVip
@@ -161,10 +159,6 @@ internal fun KugouSettingsSection(
             },
             onDismiss = { showBaseUrlDialog = false }
         )
-    }
-
-    if (showLogDialog) {
-        KugouLogDialog(onDismiss = { showLogDialog = false })
     }
 
     if (showLogoutDialog) {
@@ -229,34 +223,6 @@ private fun KugouAccountListItem(
         modifier = Modifier.settingsItemClickable {
             if (!state.loggedIn) onOpenLogin()
         },
-        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-    )
-}
-
-/** 诊断日志入口: 打开后可复制脱敏后的请求/响应记录 */
-@Composable
-private fun KugouLogListItem(
-    onOpenDialog: () -> Unit
-) {
-    ListItem(
-        leadingContent = {
-            Icon(
-                imageVector = Icons.Outlined.Cloud,
-                contentDescription = stringResource(CoreCommonR.string.settings_kugou_log),
-                modifier = Modifier.size(24.dp),
-                tint = MaterialTheme.colorScheme.onSurface
-            )
-        },
-        headlineContent = { Text(stringResource(CoreCommonR.string.settings_kugou_log)) },
-        supportingContent = { Text(stringResource(CoreCommonR.string.settings_kugou_log_desc)) },
-        trailingContent = {
-            Icon(
-                imageVector = Icons.AutoMirrored.Outlined.KeyboardArrowRight,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        },
-        modifier = Modifier.settingsItemClickable(onClick = onOpenDialog),
         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
