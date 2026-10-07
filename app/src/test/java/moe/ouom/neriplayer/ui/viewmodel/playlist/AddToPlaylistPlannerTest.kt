@@ -27,7 +27,9 @@ import moe.ouom.neriplayer.data.model.music.MusicPlatform
 import moe.ouom.neriplayer.data.model.music.SongSearchInfo
 import moe.ouom.neriplayer.data.model.playlist.AddToPlaylistPlatform
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /**
@@ -93,9 +95,10 @@ class AddToPlaylistPlannerTest {
     @Test
     fun `kugou source song is added directly without searching`() = runTest {
         var searchCalls = 0
+        val hash = "8E10D8825DDE03BCABBDE13E5A4150D2"
 
         val result = resolveAddToPlaylistOutcome(
-            song = song(isKugouSource = true, kugouHash = "HASH-A"),
+            song = song(isKugouSource = true, kugouHash = hash),
             platform = AddToPlaylistPlatform.KUGOU,
             search = {
                 searchCalls += 1
@@ -107,13 +110,75 @@ class AddToPlaylistPlannerTest {
 
         assertEquals(
             AddToPlaylistResolution.KugouHash(
-                hash = "HASH-A",
+                hash = hash,
                 title = "测试歌曲",
                 artist = "测试歌手"
             ),
             result
         )
         assertEquals("属于酷狗的歌曲不该触发搜索", 0, searchCalls)
+    }
+
+    /**
+     * 形态不对的 hash 不能当 FileHash 用
+     *
+     * 真机回归: 网易云歌曲把数字 songId 放进 `audioId`, 被当成酷狗 hash 发出去,
+     * 服务端回"歌曲列表不能为空" —— 因为 10 位数字根本不是 FileHash。
+     */
+    @Test
+    fun `non hash shaped value is not used as a kugou hash`() = runTest {
+        var searchCalls = 0
+
+        val result = resolveAddToPlaylistOutcome(
+            song = song(
+                name = "九月底",
+                artist = "余佳运",
+                isKugouSource = false,
+                // 典型的网易云 songId 形态
+                kugouHash = "1325711261"
+            ),
+            platform = AddToPlaylistPlatform.KUGOU,
+            search = {
+                searchCalls += 1
+                PlatformSearchResult.Found(
+                    candidate(
+                        id = "9983DA61BCDB296EED401069F82F7484",
+                        songName = "九月底",
+                        singer = "余佳运",
+                        platform = MusicPlatform.KUGOU
+                    )
+                )
+            }
+        )
+
+        assertEquals("形态不对必须改走搜索", 1, searchCalls)
+        assertEquals(
+            AddToPlaylistResolution.KugouHash(
+                hash = "9983DA61BCDB296EED401069F82F7484",
+                title = "九月底",
+                artist = "余佳运"
+            ),
+            result
+        )
+    }
+
+    /** 大小写都算合法 FileHash(酷狗返回过大写, 也可能是小写) */
+    @Test
+    fun `file hash shape accepts both letter cases`() {
+        assertTrue(looksLikeKugouFileHash("8E10D8825DDE03BCABBDE13E5A4150D2"))
+        assertTrue(looksLikeKugouFileHash("8e10d8825dde03bcabbde13e5a4150d2"))
+        assertTrue(looksLikeKugouFileHash("  8E10D8825DDE03BCABBDE13E5A4150D2  "))
+    }
+
+    /** 长度不对 / 含非十六进制字符 / 空值都不算 FileHash */
+    @Test
+    fun `file hash shape rejects invalid values`() {
+        assertFalse(looksLikeKugouFileHash(null))
+        assertFalse("空串不算", looksLikeKugouFileHash(""))
+        assertFalse("数字 id 不算", looksLikeKugouFileHash("1325711261"))
+        assertFalse("少一位", looksLikeKugouFileHash("8E10D8825DDE03BCABBDE13E5A4150D"))
+        assertFalse("多一位", looksLikeKugouFileHash("8E10D8825DDE03BCABBDE13E5A4150D2A"))
+        assertFalse("含非十六进制字符", looksLikeKugouFileHash("8E10D8825DDE03BCABBDE13E5A4150ZG"))
     }
 
     // ---------------------------------------------------------------- 需要搜索

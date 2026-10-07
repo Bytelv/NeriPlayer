@@ -133,19 +133,32 @@ fun AddToPlaylistSong.searchKeyword(): String {
     }
 }
 
+/** 酷狗 FileHash 的形态: 32 位十六进制 */
+private val kugouFileHashRegex = Regex("^[0-9A-Fa-f]{32}$")
+
+/**
+ * 这个值看起来像不像酷狗 FileHash
+ *
+ * 必须校验形态: 网易云歌曲会把数字 songId 放进 `audioId`
+ * (见 `ExploreViewModel` 的 `audioId = songId.toString()`), 若不加判断就会把
+ * **网易云的歌曲 id 当成酷狗 hash 发出去**, 服务端只会回"歌曲列表不能为空"。
+ */
+internal fun looksLikeKugouFileHash(value: String?): Boolean =
+    value?.trim()?.let { kugouFileHashRegex.matches(it) } == true
+
 /**
  * 判定"这次点击该直接添加还是先搜索"
  *
  * 属于目标平台就用本地已知 id 直接添加; 否则交给目标平台的搜索匹配。
  *
- * 酷狗额外有一条: **只要手里已经有 FileHash 就直接用**, 不再去搜索。
+ * 酷狗额外有一条: **手里已经有合法的 FileHash 就直接用**, 不再搜索。
  * 原因有两层:
- * - 同厂商不该再搜一遍。歌曲本身就来自酷狗(搜索/歌单)时 hash 是权威身份,
- *   搜索纯属多余。
- * - 更关键的是自动换源: 网易云歌曲换源播放到酷狗后, 歌曲**身份仍是网易云**
- *   (只有播放地址指向酷狗), 因此会被判成"跨平台", 转而去做文本搜索 —— 搜不到
- *   就报"未找到匹配"。而换源时其实已经拿到了正确的 hash, 这里复用它即可,
- *   既避免那次多余的搜索, 也彻底消除"音源是酷狗却加不进酷狗歌单"的怪现象。
+ * - 同厂商不该再搜一遍。歌曲本身来自酷狗(搜索/歌单)时 hash 是权威身份。
+ * - 网易云歌曲换源播放到酷狗后, 歌曲身份仍是网易云(只有播放地址指向酷狗),
+ *   会被判成"跨平台"而去做文本搜索; 此时若手上已有正确 hash, 复用它既省一次
+ *   搜索也避免搜不到。
+ *
+ * 但**必须先校验形态**: 其它平台的 `audioId` 不是酷狗 hash, 直接拿去用会失败。
  */
 fun planAddToRemotePlaylist(
     song: AddToPlaylistSong?,
@@ -155,8 +168,8 @@ fun planAddToRemotePlaylist(
         return AddToPlaylistResolution.Failed(AddToPlaylistFailure.SONG_UNAVAILABLE)
     }
 
-    // 已知 hash 就是最强匹配, 优先于任何搜索
-    val knownKugouHash = song.kugouHash.trim().takeIf { it.isNotEmpty() }
+    // 只有形态正确才算"已知 hash"; 否则当作没有, 走搜索
+    val knownKugouHash = song.kugouHash.trim().takeIf(::looksLikeKugouFileHash)
 
     return when (platform) {
         AddToPlaylistPlatform.LOCAL ->
@@ -177,7 +190,7 @@ fun planAddToRemotePlaylist(
                 title = song.name,
                 artist = song.artist
             )
-            // 明确是酷狗来源却没有 hash: 报明确原因, 不要退化成搜索
+            // 明确是酷狗来源却没有合法 hash: 报明确原因, 不要退化成搜索
             song.isKugouSource ->
                 AddToPlaylistResolution.Failed(AddToPlaylistFailure.MISSING_KUGOU_HASH)
 
