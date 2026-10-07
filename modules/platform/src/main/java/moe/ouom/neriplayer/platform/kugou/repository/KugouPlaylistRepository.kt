@@ -28,6 +28,7 @@ import kotlinx.coroutines.withContext
 import moe.ouom.neriplayer.common.logging.NPLogger
 import moe.ouom.neriplayer.data.model.SongItem
 import moe.ouom.neriplayer.data.model.SongSourceTags
+import moe.ouom.neriplayer.data.model.kugou.KugouDebugLog
 import moe.ouom.neriplayer.data.model.kugou.KugouPlaylistPage
 import moe.ouom.neriplayer.data.model.kugou.KugouPlaylistSongPage
 import moe.ouom.neriplayer.data.model.kugou.KugouPlaylistSummary
@@ -212,8 +213,8 @@ class KugouPlaylistRepository(private val client: KugouClient) {
         val normalizedListId = listId.trim()
         if (normalizedListId.isEmpty()) return@withContext 0
 
-        val dataPayload = buildTracksAddData(songs)
-        if (dataPayload.isEmpty()) {
+        val dataPayload = buildTracksAddSongs(songs)
+        if (dataPayload.length() == 0) {
             NPLogger.w(TAG, "酷狗加歌到歌单: 无可用的 hash, 已跳过")
             return@withContext 0
         }
@@ -221,6 +222,15 @@ class KugouPlaylistRepository(private val client: KugouClient) {
         val session = client.currentSession()
         val userId = session.userId.trim()
         val token = session.token.trim()
+
+        // 该接口的请求体格式反复试探都只能靠真机确认: 把真正发出的内容记下来,
+        // 一次复现即可判断是"没带上歌曲"还是"字段名不对"
+        KugouDebugLog.record(
+            label = "ADD tracks",
+            detail = "listid=$normalizedListId, userId=${userId.ifBlank { "<空>" }}, " +
+                "tokenLen=${token.length}, 首歌数=${songs.size}, " +
+                "songs=${dataPayload.toString().take(240)}"
+        )
 
         try {
             val json = client.postJsonBody(
@@ -385,6 +395,32 @@ class KugouPlaylistRepository(private val client: KugouClient) {
             // 没有 mixsongid 时留空: 服务端 Number('' || 0) => 0
             "${name}|${hash}|${albumId}|"
         }.joinToString(",")
+    }
+
+    /**
+     * 构造 `songs` 数组
+     *
+     * **字段名以实测为准**: 该后端读的是 `songs`(对象数组)。曾误按官方
+     * `playlist_tracks_add.js` 的 `data`(管道分隔字符串) 改写, 结果服务端直接回
+     * `40005 歌曲列表不能为空` —— 因为 `data` 是它**转发给酷狗上游**时用的格式,
+     * 不是它自己的入参格式。
+     *
+     * 元素带上 `hash` 与 `name` (官方上游同样需要这两项), 有专辑 id 时一并带上。
+     */
+    internal fun buildTracksAddSongs(songs: List<KugouSong>): JSONArray {
+        val result = JSONArray()
+        val seen = mutableSetOf<String>()
+        songs.forEach { song ->
+            val hash = song.hash.trim()
+            if (hash.isEmpty() || !seen.add(hash)) return@forEach
+            result.put(
+                JSONObject()
+                    .put("hash", hash)
+                    .put("name", song.title.trim())
+                    .put("album_id", song.albumId?.trim().orEmpty())
+            )
+        }
+        return result
     }
 
     private fun trackQuery(
@@ -594,8 +630,8 @@ class KugouPlaylistRepository(private val client: KugouClient) {
         internal fun shouldFallbackToUserTrackEndpointForTest(error: KugouApiException): Boolean =
             KugouPlaylistRepository(UNUSED_CLIENT).shouldFallbackToUserTrackEndpoint(error)
 
-        internal fun buildTracksAddDataForTest(songs: List<KugouSong>): String =
-            KugouPlaylistRepository(UNUSED_CLIENT).buildTracksAddData(songs)
+        internal fun buildTracksAddSongsForTest(songs: List<KugouSong>): String =
+            KugouPlaylistRepository(UNUSED_CLIENT).buildTracksAddSongs(songs).toString()
 
         /** 解析函数不会触碰网络, 占位实例的创建延迟到真正调用时 */
         private val UNUSED_CLIENT: KugouClient by lazy {

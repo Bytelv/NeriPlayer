@@ -1,0 +1,117 @@
+name: NeriPlayer Build APK
+
+# 手动触发出包: 无需在本地跑 7~13 分钟的 Gradle, 直接在 Actions 产物里下载 APK。
+#
+# 产物说明
+# - debug      : 任何时候都能出。applicationId 带 .debug 后缀, 与正式包**共存**,
+#                不会覆盖手机上已装的 release 包。
+# - release    : 仅当仓库 secrets 里配好签名材料时才构建。签名一致才能**覆盖安装**
+#                (不丢登录态); 未签名的 release 包会因签名冲突装不上, 因此这里宁可
+#                跳过也不产出装不上的包。
+#
+# 想拿到可覆盖安装的 release 包, 请在 fork 仓库的
+# Settings → Secrets and variables → Actions 里添加:
+#   KEYSTORE_B64       —— 密钥库文件的 base64 (单行)
+#   KEYSTORE_PASSWORD  —— 密钥库口令
+#   KEY_PASSWORD       —— key 口令
+# (KEY_ALIAS 默认 key0, 需要时再加同名 secret。)
+#
+# 生成 base64 (PowerShell):
+#   [Convert]::ToBase64String([IO.File]::ReadAllBytes("I:\np-test-release.jks"))
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_debug:
+        description: Build debug APK
+        type: boolean
+        default: true
+      build_release:
+        description: Build release APK (requires signing secrets)
+        type: boolean
+        default: true
+      target_ref:
+        description: Branch, tag, or commit SHA to build (leave as-is to use the selected branch)
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    env:
+      # 让 release 签名材料缺失时的报错信息更明确, 而不是构建中途失败
+      HAS_SIGNING: ${{ secrets.KEYSTORE_B64 != '' && secrets.KEYSTORE_PASSWORD != '' && secrets.KEY_PASSWORD != '' }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # 留空则构建当前所选分支, 避免默认值写死 master 时选错提交
+          ref: ${{ inputs.target_ref || github.ref }}
+          fetch-depth: 0
+          # 项目依赖 4 个子模块, 少了它们 Gradle 配置阶段就会失败
+          submodules: recursive
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+          cache: gradle
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Build debug APK
+        if: ${{ inputs.build_debug }}
+        run: |
+          ./gradlew :app:assembleDebug --stacktrace
+
+      - name: Decode keystore
+        if: ${{ inputs.build_release && env.HAS_SIGNING == 'true' }}
+        run: |
+          mkdir -p app
+          echo "$KEYSTORE_B64" | base64 -d > app/neri.jks
+        env:
+          KEYSTORE_B64: ${{ secrets.KEYSTORE_B64 }}
+
+      - name: Build release APK
+        if: ${{ inputs.build_release && env.HAS_SIGNING == 'true' }}
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS || 'key0' }}
+        run: |
+          ./gradlew :app:assembleRelease \
+            -PKEYSTORE_FILE=neri.jks \
+            -PKEYSTORE_PASSWORD="$KEYSTORE_PASSWORD" \
+            -PKEY_ALIAS="$KEY_ALIAS" \
+            -PKEY_PASSWORD="$KEY_PASSWORD" \
+            --stacktrace
+
+      - name: Warn when release was requested but signing secrets are missing
+        if: ${{ inputs.build_release && env.HAS_SIGNING != 'true' }}
+        run: |
+          echo "::warning::未配置签名 secrets(KEYSTORE_B64 / KEYSTORE_PASSWORD / KEY_PASSWORD), 已跳过 release 构建。未签名的 release 包无法覆盖安装到已装正式包的设备。"
+
+      - name: Collect APKs
+        run: |
+          mkdir -p dist
+          find app/build/outputs/apk -name '*.apk' -type f -exec cp -v {} dist/ \;
+          echo "--- dist ---"
+          ls -lh dist || true
+
+      - name: Upload APKs
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: NeriPlayer-apk-${{ github.sha }}
+          path: dist/*.apk
+          if-no-files-found: warn
+          retention-days: 14
